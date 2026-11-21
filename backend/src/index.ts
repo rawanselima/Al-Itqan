@@ -25,27 +25,49 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database Connection Handling for Serverless (Vercel) & Local
-let isConnected = false;
-async function connectDB() {
-  if (isConnected && mongoose.connection.readyState === 1) return;
-  try {
-    await mongoose.connect(MONGO_URI);
-    isConnected = true;
-    console.log(`✅ Connected to MongoDB. Database: ${mongoose.connection.name}`);
-  } catch (err: any) {
-    console.error('❌ MongoDB connection error:', err.message);
-    throw err;
+// Robust Connection Caching for Serverless & Long-running Node server
+let cachedPromise: Promise<typeof mongoose> | null = null;
+
+export async function connectDB() {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose;
   }
+
+  // If currently connecting, wait for the existing in-flight promise
+  if (mongoose.connection.readyState === 2 && cachedPromise) {
+    return cachedPromise;
+  }
+
+  cachedPromise = mongoose
+    .connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 8000,
+    })
+    .then((m) => {
+      console.log(`✅ Connected to MongoDB. Database: ${m.connection.name}`);
+      return m;
+    })
+    .catch((err) => {
+      console.error('❌ MongoDB connection error:', err.message);
+      cachedPromise = null;
+      throw err;
+    });
+
+  return cachedPromise;
 }
 
-// Middleware to ensure DB is connected for every incoming request (Essential for Vercel)
-app.use(async (_req: Request, _res: Response, next) => {
+// Connect immediately on startup so local server is ready instantly
+connectDB().catch(() => {});
+
+// Middleware to ensure DB connection is ready before any API route executes
+app.use(async (_req: Request, res: Response, next) => {
   try {
     await connectDB();
     next();
-  } catch (err) {
-    next(err);
+  } catch (err: any) {
+    res.status(500).json({
+      error: 'فشل الاتصال بقاعدة البيانات. يرجى التأكد من اتصال الإنترنت.',
+      details: err.message,
+    });
   }
 });
 
@@ -53,7 +75,8 @@ app.use(async (_req: Request, _res: Response, next) => {
 app.get('/', (_req: Request, res: Response) => {
   res.json({
     status: 'success',
-    message: 'Al-Itqan API is running smoothly on Vercel Serverless',
+    message: 'Al-Itqan API is running smoothly',
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString(),
   });
 });
@@ -76,7 +99,7 @@ app.use('/api/reports', reportRoutes);
 // Run app.listen locally only when NOT running inside Vercel Serverless
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
-    console.log(`🚀 Local server listening on http://localhost:${PORT}`);
+    console.log(`🚀 Server is listening on http://localhost:${PORT}`);
   });
 }
 
