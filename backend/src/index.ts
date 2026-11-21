@@ -25,11 +25,35 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health Check
+// Database Connection Handling for Serverless (Vercel) & Local
+let isConnected = false;
+async function connectDB() {
+  if (isConnected && mongoose.connection.readyState === 1) return;
+  try {
+    await mongoose.connect(MONGO_URI);
+    isConnected = true;
+    console.log(`✅ Connected to MongoDB. Database: ${mongoose.connection.name}`);
+  } catch (err: any) {
+    console.error('❌ MongoDB connection error:', err.message);
+    throw err;
+  }
+}
+
+// Middleware to ensure DB is connected for every incoming request (Essential for Vercel)
+app.use(async (_req: Request, _res: Response, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Health Check Routes
 app.get('/', (_req: Request, res: Response) => {
   res.json({
     status: 'success',
-    message: 'Al-Itqan API is running smoothly',
+    message: 'Al-Itqan API is running smoothly on Vercel Serverless',
     timestamp: new Date().toISOString(),
   });
 });
@@ -49,23 +73,12 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/homework', homeworkRoutes);
 app.use('/api/reports', reportRoutes);
 
-// Database Connection
-console.log(
-  `📡 Connecting to MongoDB: ${
-    MONGO_URI.includes('mongodb+srv') ? 'MongoDB Atlas (Cloud)' : 'Localhost'
-  }`
-);
-
-mongoose
-  .connect(MONGO_URI)
-  .then(() => {
-    console.log(`✅ Connected to MongoDB successfully. Database: ${mongoose.connection.name}`);
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB connection error:', err.message);
+// Run app.listen locally only when NOT running inside Vercel Serverless
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Local server listening on http://localhost:${PORT}`);
   });
+}
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`🚀 Server is listening on http://localhost:${PORT}`);
-});
+// Export default app for Vercel Serverless Functions
+export default app;
