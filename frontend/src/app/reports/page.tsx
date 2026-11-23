@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { api, Circle, formatCircleDays } from "@/lib/api";
 import { CustomSelect } from "@/components/CustomSelect";
 import { SettingsModal } from "@/components/SettingsModal";
@@ -16,7 +15,7 @@ import {
   LuChevronDown,
   LuChevronUp,
   LuSettings,
-  LuFileSpreadsheet,
+  LuMessageSquare,
 } from "react-icons/lu";
 import { FaWhatsapp } from "react-icons/fa6";
 
@@ -36,88 +35,82 @@ const MONTHS_AR = [
 ];
 
 export default function ReportsPage() {
-  const currentDate = new Date();
-  const [activeTab, setActiveTab] = useState<"whatsapp" | "table">("whatsapp");
-
-  // Selection state
+  const [circles, setCircles] = useState<Circle[]>([]);
   const [selectedCircleId, setSelectedCircleId] = useState("");
-  const [periodType, setPeriodType] = useState<"monthly" | "custom">("monthly");
-  const [year, setYear] = useState(() => currentDate.getFullYear());
-  const [month, setMonth] = useState(() => currentDate.getMonth() + 1);
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [month, setMonth] = useState(() => new Date().getMonth() + 1);
 
-  // Custom date range state (for weekly or custom range)
-  const [customFrom, setCustomFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 6);
-    return d.toISOString().slice(0, 10);
-  });
-  const [customTo, setCustomTo] = useState(() => currentDate.toISOString().slice(0, 10));
+  // Data state
+  const [reportData, setReportData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  // WhatsApp text editing & copying
-  const [editedText, setEditedText] = useState("");
-  const [copied, setCopied] = useState(false);
+  // WhatsApp text state
+  const [whatsappText, setWhatsappText] = useState("");
+  const [originalWhatsappText, setOriginalWhatsappText] = useState("");
+  const [warnings, setWarnings] = useState<any[]>([]);
+  const [showWhatsappCard, setShowWhatsappCard] = useState(true);
   const [showWarningsDetails, setShowWarningsDetails] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // 1. Fetch Circles using React Query
-  const { data: circles = [] } = useQuery({
-    queryKey: ["circles"],
-    queryFn: () => api.getCircles(),
-  });
-
-  // Set default circle once loaded
+  // Load circles on mount
   useEffect(() => {
-    if (circles.length > 0 && !selectedCircleId) {
-      setSelectedCircleId(circles[0]._id);
+    async function loadCircles() {
+      try {
+        const data = await api.getCircles();
+        setCircles(data);
+        if (data.length > 0) {
+          const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+          const urlCircleId = params?.get("circleId");
+          if (urlCircleId && data.some((c) => c._id === urlCircleId)) {
+            setSelectedCircleId(urlCircleId);
+          } else {
+            setSelectedCircleId(data[0]._id);
+          }
+        }
+      } catch (err: any) {
+        console.error("فشل جلب الحلقات:", err);
+      }
     }
-  }, [circles, selectedCircleId]);
+    loadCircles();
+  }, []);
 
-  // Compute from and to dates based on period type
-  const { fromDate, toDate } = useMemo(() => {
-    if (periodType === "custom") {
-      return { fromDate: customFrom, toDate: customTo };
-    }
-    // Monthly range
-    const firstDay = new Date(Date.UTC(year, month - 1, 1));
-    const lastDay = new Date(Date.UTC(year, month, 0));
-    return {
-      fromDate: firstDay.toISOString().slice(0, 10),
-      toDate: lastDay.toISOString().slice(0, 10),
-    };
-  }, [periodType, year, month, customFrom, customTo]);
-
-  // 2. Fetch WhatsApp Homework & Attendance Report using React Query
-  const {
-    data: reportData,
-    isLoading: reportLoading,
-    error: reportError,
-    refetch: refetchReport,
-  } = useQuery({
-    queryKey: ["homeworkReport", selectedCircleId, fromDate, toDate],
-    queryFn: () => api.getHomeworkReport(selectedCircleId, fromDate, toDate),
-    enabled: Boolean(selectedCircleId),
-  });
-
-  // 3. Fetch Monthly Detailed Table Data for Printing
-  const {
-    data: tableReportData,
-    isLoading: tableLoading,
-  } = useQuery({
-    queryKey: ["monthlyTableReport", selectedCircleId, year, month],
-    queryFn: () => api.getMonthlyReport(selectedCircleId, year, month),
-    enabled: Boolean(selectedCircleId && activeTab === "table"),
-  });
-
-  // Keep editedText synced when fresh data arrives
-  useEffect(() => {
-    if (reportData?.text) {
-      setEditedText(reportData.text);
-    }
-  }, [reportData?.text]);
-
-  const handleCopyText = async () => {
+  // Fetch report whenever circle, year, or month change
+  const fetchReport = async () => {
+    if (!selectedCircleId) return;
     try {
-      await navigator.clipboard.writeText(editedText);
+      setLoading(true);
+      setError("");
+
+      // 1. Fetch table data
+      const data = await api.getMonthlyReport(selectedCircleId, year, month);
+      setReportData(data);
+
+      // 2. Fetch WhatsApp formatted report
+      try {
+        const hwReport = await api.getHomeworkReport(selectedCircleId, year, month);
+        setWhatsappText(hwReport.text);
+        setOriginalWhatsappText(hwReport.text);
+        setWarnings(hwReport.warnings || []);
+      } catch (e) {
+        console.error("فشل جلب نص الواتساب:", e);
+      }
+    } catch (err: any) {
+      setError(err.message || "حدث خطأ في جلب التقرير الشهري");
+      setReportData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReport();
+  }, [selectedCircleId, year, month]);
+
+  const handleCopyWhatsapp = async () => {
+    try {
+      await navigator.clipboard.writeText(whatsappText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
@@ -125,10 +118,8 @@ export default function ReportsPage() {
     }
   };
 
-  const handleResetText = () => {
-    if (reportData?.text) {
-      setEditedText(reportData.text);
-    }
+  const handleResetWhatsapp = () => {
+    setWhatsappText(originalWhatsappText);
   };
 
   const handlePrint = () => {
@@ -139,396 +130,292 @@ export default function ReportsPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full" dir="rtl">
-      {/* 1. SCREEN VIEW (Hidden when printing) */}
+      {/* 1. SCREEN VIEW */}
       <div className="no-print space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-text-main flex items-center gap-2.5">
-              <LuFileSpreadsheet className="w-6 h-6 text-primary" />
-              <span>تقارير الحلقات والمتابعة</span>
-            </h2>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-text-main">التقارير الشهرية الشاملة</h2>
             <p className="text-xs sm:text-sm text-text-muted mt-1">
-              توليد رسائل الواتساب الأسبوعية والشهرية تلقائياً، ومتابعة الحضور والغياب وأداء الواجبات
+              تقرير شهري تفصيلي مقسم بالأسابيع التقويمية لمتابعة الحضور، الغياب، التسميع، وأداء الواجبات، ورسالة الواتساب
             </p>
           </div>
-
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-border bg-surface text-text-main text-xs sm:text-sm font-bold shadow-xs hover:bg-surface-hover transition-colors cursor-pointer"
+              onClick={() => setIsSettingsOpen(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-border bg-surface text-text-main text-xs sm:text-sm font-bold shadow-xs hover:bg-beige transition-colors cursor-pointer"
             >
               <LuSettings className="w-4 h-4 text-primary" />
               <span>الإعدادات والإجازات</span>
             </button>
 
-            {activeTab === "table" && (
-              <button
-                onClick={handlePrint}
-                disabled={!tableReportData || tableReportData.students.length === 0}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs sm:text-sm font-bold shadow-md hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
-              >
-                <LuPrinter className="w-4 h-4" />
-                <span>طباعة التقرير</span>
-              </button>
-            )}
+            <button
+              onClick={handlePrint}
+              disabled={!reportData || reportData.students.length === 0}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs sm:text-sm font-bold shadow-md hover:bg-primary-hover disabled:opacity-50 cursor-pointer transition-all"
+            >
+              <LuPrinter className="w-4 h-4" />
+              <span>طباعة التقرير الشهري</span>
+            </button>
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="flex border-b border-surface-border gap-2">
-          <button
-            onClick={() => setActiveTab("whatsapp")}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
-              activeTab === "whatsapp"
-                ? "border-primary text-primary"
-                : "border-transparent text-text-muted hover:text-text-main"
-            }`}
-          >
-            <FaWhatsapp className="w-4 h-4 text-emerald-600" />
-            <span>رسالة الواتساب الجاهزة</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("table")}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
-              activeTab === "table"
-                ? "border-primary text-primary"
-                : "border-transparent text-text-muted hover:text-text-main"
-            }`}
-          >
-            <LuPrinter className="w-4 h-4" />
-            <span>جدول المتابعة الشهري للطباعة</span>
-          </button>
+        {/* Filter Controls */}
+        <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-surface-border shadow-xs grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-main">الحلقة *</label>
+            <CustomSelect
+              value={selectedCircleId}
+              onChange={(val) => setSelectedCircleId(val as string)}
+              options={circles.map((c) => ({
+                value: c._id,
+                label: c.name,
+                badge: formatCircleDays(c.days),
+              }))}
+              icon={<LuBookOpen className="w-4 h-4 text-primary" />}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-main">الشهر *</label>
+            <CustomSelect
+              value={month}
+              onChange={(val) => setMonth(Number(val))}
+              options={MONTHS_AR.map((m) => ({
+                value: m.val,
+                label: `${m.name} (${m.val})`,
+              }))}
+              icon={<LuCalendar className="w-4 h-4 text-primary" />}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-main">السنة *</label>
+            <input
+              suppressHydrationWarning
+              type="number"
+              value={year}
+              onChange={(e) => setYear(parseInt(e.target.value, 10))}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border text-xs sm:text-sm text-text-main bg-surface focus:outline-hidden focus:border-primary font-bold"
+            />
+          </div>
         </div>
 
-        {/* Filter Controls Bar */}
-        <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-surface-border shadow-xs space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Circle Select */}
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-text-main">الحلقة *</label>
-              <CustomSelect
-                value={selectedCircleId}
-                onChange={(val) => setSelectedCircleId(val as string)}
-                options={circles.map((c) => ({
-                  value: c._id,
-                  label: c.name,
-                  badge: formatCircleDays(c.days),
-                }))}
-                icon={<LuBookOpen className="w-4 h-4 text-primary" />}
-              />
+        {/* WhatsApp Message Generator Box (Always visible at top of report) */}
+        {whatsappText && (
+          <div className="bg-surface rounded-2xl sm:rounded-3xl border border-surface-border shadow-xs p-4 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-surface-border pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-800 shrink-0">
+                  <FaWhatsapp className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-text-main">
+                    تقرير رسالة الواتساب الجاهز للإرسال
+                  </h3>
+                  <p className="text-xs text-text-muted">
+                    رسالة نصية منسقة بدقة وفق التقويم والرموز، يمكنك تعديلها مباشرة ونسخها لقروب الحلقة
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowWhatsappCard(!showWhatsappCard)}
+                  className="px-3 py-1.5 rounded-xl border border-surface-border text-text-muted hover:text-text-main text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <span>{showWhatsappCard ? "طي الرسالة" : "إظهار الرسالة"}</span>
+                  {showWhatsappCard ? <LuChevronUp className="w-4 h-4" /> : <LuChevronDown className="w-4 h-4" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetWhatsapp}
+                  className="px-3 py-1.5 rounded-xl border border-surface-border text-text-muted hover:text-text-main text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  title="استعادة النص المولد أصلياً"
+                >
+                  <LuRefreshCw className="w-3.5 h-3.5" />
+                  <span>إعادة ضبط</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyWhatsapp}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold shadow-sm transition-all cursor-pointer"
+                >
+                  {copied ? (
+                    <>
+                      <LuCheck className="w-4 h-4 text-emerald-200" />
+                      <span>تم نسخ التقرير!</span>
+                    </>
+                  ) : (
+                    <>
+                      <LuCopy className="w-4 h-4" />
+                      <span>نسخ الرسالة</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
-            {/* Period Type Select (Only for WhatsApp tab) */}
-            {activeTab === "whatsapp" && (
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">نوع الفترة</label>
-                <div className="flex bg-surface-hover/50 p-1 rounded-xl border border-surface-border">
-                  <button
-                    type="button"
-                    onClick={() => setPeriodType("monthly")}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                      periodType === "monthly"
-                        ? "bg-primary text-white shadow-xs"
-                        : "text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    تقرير شهري
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPeriodType("custom")}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                      periodType === "custom"
-                        ? "bg-primary text-white shadow-xs"
-                        : "text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    أسبوعي / مخصص
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Dynamic Date Controls */}
-            {activeTab === "whatsapp" && periodType === "custom" ? (
-              <>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-text-main">من تاريخ</label>
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={(e) => setCustomFrom(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border bg-surface text-xs sm:text-sm font-semibold focus:outline-hidden focus:border-primary"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-text-main">إلى تاريخ</label>
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={(e) => setCustomTo(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border bg-surface text-xs sm:text-sm font-semibold focus:outline-hidden focus:border-primary"
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-text-main">الشهر *</label>
-                  <CustomSelect
-                    value={month}
-                    onChange={(val) => setMonth(Number(val))}
-                    options={MONTHS_AR.map((m) => ({
-                      value: m.val,
-                      label: `${m.name} (${m.val})`,
-                    }))}
-                    icon={<LuCalendar className="w-4 h-4 text-primary" />}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-text-main">السنة *</label>
-                  <input
-                    type="number"
-                    value={year}
-                    onChange={(e) => setYear(parseInt(e.target.value, 10))}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border text-xs sm:text-sm text-text-main bg-surface focus:outline-hidden focus:border-primary font-semibold"
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* TAB 1: WHATSAPP REPORT VIEW */}
-        {activeTab === "whatsapp" && (
-          <div className="space-y-4">
-            {/* Warnings Alert Box */}
-            {reportData?.warnings && reportData.warnings.length > 0 && (
-              <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-amber-900 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5 font-bold text-xs sm:text-sm">
-                    <LuTriangleAlert className="w-5 h-5 text-amber-600 shrink-0" />
-                    <span>
-                      تنبيه: يوجد {reportData.warnings.length} أيام ماضية لم يتم تسجيل الحضور أو الواجب فيها
-                      (ظهرت بالرمز ▫️).
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowWarningsDetails(!showWarningsDetails)}
-                    className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 hover:text-amber-950 cursor-pointer"
-                  >
-                    <span>{showWarningsDetails ? "إخفاء التفاصيل" : "عرض السجلات الناقصة"}</span>
-                    {showWarningsDetails ? (
-                      <LuChevronUp className="w-4 h-4" />
-                    ) : (
-                      <LuChevronDown className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-
-                {showWarningsDetails && (
-                  <div className="pt-2 border-t border-amber-200/60 max-h-48 overflow-y-auto space-y-1.5 text-xs">
-                    {reportData.warnings.map((w, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-amber-100/60"
-                      >
-                        <span className="font-semibold">{w.studentName}</span>
-                        <div className="flex items-center gap-2 text-amber-800 font-mono">
-                          <span>{w.date}</span>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-amber-200">
-                            {w.type === "homework" ? "واجب ناقص" : "جلسة حضور"}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Error Message */}
-            {reportError && (
-              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
-                {(reportError as any)?.message || "فشل تحميل التقرير"}
-              </div>
-            )}
-
-            {/* Loading Skeleton */}
-            {reportLoading ? (
-              <div className="bg-surface rounded-3xl p-12 text-center text-text-muted border border-surface-border">
-                <LuRefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
-                <p className="text-sm font-bold">جاري إعداد تقرير الواتساب...</p>
-              </div>
-            ) : (
-              /* Editable Textarea & Controls */
-              <div className="bg-surface rounded-2xl sm:rounded-3xl border border-surface-border p-4 sm:p-6 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-surface-border pb-4">
-                  <div>
-                    <h3 className="font-extrabold text-base text-text-main flex items-center gap-2">
-                      <FaWhatsapp className="w-4 h-4 text-emerald-600" />
-                      <span>النص الجاهز للمشاركة عبر الواتساب</span>
-                    </h3>
-                    <p className="text-xs text-text-muted">
-                      يمكنك التعديل مباشرة على النص قبل نسخه وإرساله لقروب الحلقة
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleResetText}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-surface-border text-text-muted hover:text-text-main hover:bg-surface-hover text-xs font-bold transition-colors cursor-pointer"
-                      title="استعادة النص الأصلي"
-                    >
-                      <LuRefreshCw className="w-3.5 h-3.5" />
-                      <span>إعادة ضبط</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyText}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold shadow-md transition-colors cursor-pointer"
-                    >
-                      {copied ? (
-                        <>
-                          <LuCheck className="w-4 h-4 text-emerald-200" />
-                          <span>تم نسخ التقرير!</span>
-                        </>
-                      ) : (
-                        <>
-                          <LuCopy className="w-4 h-4" />
-                          <span>نسخ التقرير للواتساب</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Textarea */}
-                <div className="relative">
-                  <textarea
-                    rows={18}
-                    value={editedText}
-                    onChange={(e) => setEditedText(e.target.value)}
-                    dir="rtl"
-                    className="w-full px-4 py-3 rounded-2xl border border-surface-border bg-surface-hover/30 text-text-main text-sm font-sans focus:outline-hidden focus:border-primary leading-relaxed resize-y selection:bg-emerald-100 selection:text-emerald-900"
-                    placeholder="سيظهر التقرير هنا..."
-                  />
-                </div>
-              </div>
+            {/* Textarea */}
+            {showWhatsappCard && (
+              <textarea
+                rows={12}
+                value={whatsappText}
+                onChange={(e) => setWhatsappText(e.target.value)}
+                dir="rtl"
+                className="w-full px-4 py-3 rounded-2xl border border-surface-border bg-surface-hover/30 text-text-main text-sm font-sans focus:outline-hidden focus:border-primary leading-relaxed resize-y selection:bg-emerald-100 selection:text-emerald-900"
+              />
             )}
           </div>
         )}
 
-        {/* TAB 2: PRINTABLE TABLE VIEW */}
-        {activeTab === "table" && (
-          <div className="space-y-4">
-            {tableLoading ? (
-              <div className="bg-surface rounded-3xl p-12 text-center text-text-muted border border-surface-border">
-                <LuRefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
-                <p className="text-sm font-bold">جاري إعداد الجدول الشهري...</p>
-              </div>
-            ) : !tableReportData || tableReportData.students.length === 0 ? (
-              <div className="p-8 text-center bg-surface rounded-2xl border border-surface-border text-text-muted text-sm">
-                لا توجد طالبات أو جلسات مسجلة لهذه الحلقة في شهر {selectedMonthName} {year}.
-              </div>
-            ) : (
-              <div className="bg-surface rounded-2xl sm:rounded-3xl border border-surface-border shadow-xs overflow-hidden">
-                <div className="p-4 sm:p-6 border-b border-surface-border flex items-center justify-between">
-                  <div>
-                    <h3 className="font-extrabold text-base text-text-main">
-                      كشف المتابعة الشهري - حلقة {tableReportData.circle.name}
-                    </h3>
-                    <p className="text-xs text-text-muted">
-                      شهر {selectedMonthName} {year}
-                    </p>
-                  </div>
+        {/* Report Content Table */}
+        {loading ? (
+          <div className="p-12 text-center text-text-muted">جاري إعداد التقرير الشهري...</div>
+        ) : error ? (
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+            {error}
+          </div>
+        ) : !reportData || reportData.students.length === 0 ? (
+          <div className="p-12 text-center bg-surface rounded-2xl sm:rounded-3xl border border-dashed border-surface-border space-y-2">
+            <h3 className="text-base font-bold text-text-main">لا توجد بيانات لهذا الشهر</h3>
+            <p className="text-xs text-text-muted">
+              لم يتم العثور على طالبات أو جلسات مسجلة في شهر {selectedMonthName} {year}.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Visual Cards Summary */}
+            <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-surface-border shadow-xs overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+                <div>
+                  <h3 className="font-extrabold text-base sm:text-lg text-text-main">
+                    كشف المتابعة الشهري - حلقة {reportData.circle.name}
+                  </h3>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    شهر {selectedMonthName} {year} • عدد الأسابيع التقويمية: {reportData.weeks.length} أسابيع
+                  </p>
                 </div>
+              </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right border-collapse text-xs sm:text-sm">
-                    <thead>
-                      <tr className="bg-surface-hover/60 border-b border-surface-border text-text-muted text-[11px] sm:text-xs font-bold">
-                        <th className="py-3 px-4">الطالبة</th>
-                        {tableReportData.weeks.map((w: any) => (
-                          <th key={w.weekNumber} className="py-3 px-3 text-center border-r border-surface-border">
-                            {w.name}
-                          </th>
-                        ))}
-                        <th className="py-3 px-4 text-center border-r border-surface-border">مجموع الحضور</th>
-                        <th className="py-3 px-4 text-center border-r border-surface-border">مجموع الواجبات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-surface-border">
-                      {tableReportData.students.map((st: any) => (
-                        <tr key={st.studentId} className="hover:bg-surface-hover/30 transition-colors">
-                          <td className="py-3 px-4 font-bold text-text-main">{st.name}</td>
-                          {st.weeklyStats.map((ws: any) => (
-                            <td key={ws.weekNumber} className="py-3 px-3 text-center border-r border-surface-border">
+              {/* Responsive Detailed Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-right border-collapse text-xs sm:text-sm min-w-[700px]">
+                  <thead>
+                    <tr className="bg-beige/70 text-text-muted text-[11px] sm:text-xs font-bold border-b border-surface-border">
+                      <th className="py-3 sm:py-4 px-4 w-44 sticky right-0 bg-beige/90 z-10">الطالبة</th>
+                      {reportData.weeks.map((w: any) => (
+                        <th key={w.weekNumber} className="py-3 sm:py-4 px-3 text-center border-r border-surface-border">
+                          <div>{w.name}</div>
+                          <div className="text-[10px] text-text-muted font-normal mt-0.5 font-mono">
+                            {w.days?.length ? `${w.days.length} أيام` : `${w.startDate.slice(5)} ~ ${w.endDate.slice(5)}`}
+                          </div>
+                        </th>
+                      ))}
+                      <th className="py-3 sm:py-4 px-4 text-center border-r border-surface-border w-28">
+                        مجموع الحضور
+                      </th>
+                      <th className="py-3 sm:py-4 px-4 text-center border-r border-surface-border w-28">
+                        مجموع الواجبات
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-border">
+                    {reportData.students.map((st: any) => (
+                      <tr key={st.studentId} className="hover:bg-beige/40 transition-colors">
+                        <td className="py-3 sm:py-4 px-4 font-bold text-text-main sticky right-0 bg-surface z-10 border-l border-surface-border shadow-xs">
+                          {st.name}
+                        </td>
+
+                        {st.weeklyStats.map((ws: any) => {
+                          const badgeObj = st.weeklyDetails?.find((wd: any) => wd.weekNumber === ws.weekNumber);
+                          const badge = badgeObj?.badge;
+
+                          return (
+                            <td key={ws.weekNumber} className="py-3 sm:py-4 px-3 text-center border-r border-surface-border">
                               <div className="space-y-1">
-                                <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[11px] font-bold">
-                                  حضور: {ws.present}
-                                </span>
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[11px] font-bold">
+                                    حضور: {ws.present}
+                                  </span>
+                                  {badge === "medal" && <span title="أتمت المهام والحضور">🏅</span>}
+                                  {badge === "trophy" && <span title="أتمت عمل المهام">🏆</span>}
+                                </div>
                                 <div>
-                                  <span className="text-[11px] text-text-muted font-bold">
+                                  <span className="text-[11px] text-text-muted font-bold font-mono">
                                     واجب: {ws.homeworkDays}
                                   </span>
                                 </div>
                               </div>
                             </td>
-                          ))}
-                          <td className="py-3 px-4 text-center font-bold text-emerald-700 border-r border-surface-border">
-                            {st.totals.present} حصة
-                          </td>
-                          <td className="py-3 px-4 text-center font-bold text-primary border-r border-surface-border">
-                            {st.totals.homeworkDays} يوم
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          );
+                        })}
+
+                        <td className="py-3 sm:py-4 px-4 text-center font-bold text-emerald-700 border-r border-surface-border font-mono">
+                          {st.totals.present} حصة
+                        </td>
+                        <td className="py-3 sm:py-4 px-4 text-center font-bold text-primary border-r border-surface-border font-mono">
+                          {st.totals.homeworkDays} يوم
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* 2. PRINT-ONLY VIEW */}
-      {tableReportData && (
+      {/* 2. PRINT-ONLY SHEET */}
+      {reportData && (
         <div className="print-only hidden font-sans" dir="rtl">
           <div className="text-center space-y-2 mb-6">
             <h1 className="text-2xl font-extrabold text-primary">نظام الإتقان لإدارة الحلقات القرآنية</h1>
             <h2 className="text-lg font-bold text-text-main">
-              تقرير شهر {selectedMonthName} {year} - حلقة {tableReportData.circle.name}
+              كشف المتابعة الشهري - شهر {selectedMonthName} {year}
             </h2>
+            <div className="text-xs text-gray-600">الحلقة: {reportData.circle?.name}</div>
           </div>
 
-          <table className="w-full text-right border-collapse border border-gray-400 text-xs">
+          <table className="w-full text-right border-collapse border border-black text-xs">
             <thead>
-              <tr className="bg-gray-100 font-bold border-b border-gray-400">
-                <th className="p-2 border border-gray-300">م</th>
-                <th className="p-2 border border-gray-300">اسم الطالبة</th>
-                <th className="p-2 border border-gray-300 text-center">إجمالي الحضور</th>
-                <th className="p-2 border border-gray-300 text-center">الغياب</th>
-                <th className="p-2 border border-gray-300 text-center">الاعتذار</th>
-                <th className="p-2 border border-gray-300 text-center">التسميع</th>
-                <th className="p-2 border border-gray-300 text-center">أيام الواجب</th>
+              <tr className="bg-slate-200 border-b border-black font-bold">
+                <th className="border border-black p-2 w-36">اسم الطالبة</th>
+                {reportData.weeks.map((w: any) => (
+                  <th key={w.weekNumber} className="border border-black p-2 text-center">
+                    <div>{w.name}</div>
+                    <div className="text-[9px] font-normal">
+                      {w.startDate.slice(5)} ~ {w.endDate.slice(5)}
+                    </div>
+                  </th>
+                ))}
+                <th className="border border-black p-2 text-center w-36 bg-slate-300">
+                  إجمالي الشهر
+                </th>
               </tr>
             </thead>
             <tbody>
-              {tableReportData.students.map((st: any, i: number) => (
-                <tr key={st.studentId} className="border-b border-gray-300">
-                  <td className="p-2 border border-gray-300 text-center">{i + 1}</td>
-                  <td className="p-2 border border-gray-300 font-bold">{st.name}</td>
-                  <td className="p-2 border border-gray-300 text-center">{st.totals.present}</td>
-                  <td className="p-2 border border-gray-300 text-center">{st.totals.absent}</td>
-                  <td className="p-2 border border-gray-300 text-center">{st.totals.excused}</td>
-                  <td className="p-2 border border-gray-300 text-center">{st.totals.recited}</td>
-                  <td className="p-2 border border-gray-300 text-center">{st.totals.homeworkDays}</td>
+              {reportData.students.map((st: any) => (
+                <tr key={st.studentId} className="border-b border-black">
+                  <td className="border border-black p-2 font-bold">{st.name}</td>
+
+                  {st.weeklyStats.map((ws: any) => (
+                    <td key={ws.weekNumber} className="border border-black p-2 text-center">
+                      <div className="space-y-0.5">
+                        <div>حضور: {ws.present} | غياب: {ws.absent}</div>
+                        <div>واجب: {ws.homeworkDays} أيام</div>
+                      </div>
+                    </td>
+                  ))}
+
+                  <td className="border border-black p-2 text-center font-bold bg-slate-100">
+                    <div>حضور: {st.totals.present} حصة</div>
+                    <div>واجبات: {st.totals.homeworkDays} يوم</div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -538,10 +425,10 @@ export default function ReportsPage() {
 
       {/* Settings & Holidays Modal */}
       <SettingsModal
-        isOpen={isSettingsModalOpen}
+        isOpen={isSettingsOpen}
         onClose={() => {
-          setIsSettingsModalOpen(false);
-          refetchReport();
+          setIsSettingsOpen(false);
+          fetchReport();
         }}
         circles={circles}
       />

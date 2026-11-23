@@ -31,7 +31,6 @@ const LEGEND_ITEMS = [
   { symbol: SYMBOLS.warning, label: '⚠️ تحذير بالحذف' },
   { symbol: SYMBOLS.excused, label: '✋🏻 اعتذار عن الحلقه' },
   { symbol: SYMBOLS.holiday, label: '➖ إجازة' },
-  { symbol: SYMBOLS.notRecorded, label: '▫️ لم يُسجّل بعد' },
 ];
 
 export function renderReportText(

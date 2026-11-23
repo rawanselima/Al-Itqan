@@ -6,6 +6,7 @@ export interface IAttendanceRecord {
   hasRecited: boolean;
   order?: number | null;
   notes?: string;
+  departureTime?: string | null;
 }
 
 export interface IAttendanceSession extends Document {
@@ -28,6 +29,7 @@ const AttendanceRecordSchema = new Schema<IAttendanceRecord>(
     hasRecited: { type: Boolean, default: false },
     order: { type: Number, default: null },
     notes: { type: String, default: '' },
+    departureTime: { type: String, default: null },
   },
   { _id: false }
 );

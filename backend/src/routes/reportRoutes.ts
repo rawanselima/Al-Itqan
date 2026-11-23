@@ -14,6 +14,8 @@ const router = Router();
 // مخطط التحقق من معلمات التقرير باستخدام Zod
 const homeworkReportQuerySchema = z.object({
   circleId: z.string().min(1, 'معرف الحلقة مطلوب'),
+  year: z.union([z.string(), z.number()]).optional(),
+  month: z.union([z.string(), z.number()]).optional(),
   from: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'صيغة تاريخ البداية يجب أن تكون YYYY-MM-DD')
@@ -25,7 +27,7 @@ const homeworkReportQuerySchema = z.object({
 });
 
 // GET /api/reports/homework
-// نقطة النهاية لتوليد تقرير الواجبات والحضور (أسبوعي أو شهري)
+// نقطة النهاية لتوليد تقرير الواجبات والحضور الشهري
 router.get('/homework', async (req: Request, res: Response) => {
   try {
     // 1. التحقق من المدخلات باستخدام Zod
@@ -37,10 +39,16 @@ router.get('/homework', async (req: Request, res: Response) => {
     }
 
     const { circleId } = parseResult.data;
-    let { from, to } = parseResult.data;
+    let { from, to, year, month } = parseResult.data;
 
-    // 2. إذا لم يتم تمرير from و to، يتم الافتراض على الشهر الحالي بالكامل
-    if (!from || !to) {
+    // 2. إذا تم تمرير year و month، يتم حساب نطاق الشهر بالكامل
+    if (year && month) {
+      const y = parseInt(String(year), 10);
+      const m = parseInt(String(month), 10);
+      from = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10);
+      to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    } else if (!from || !to) {
+      // الافتراض على الشهر الحالي بالكامل
       const now = new Date();
       const y = now.getFullYear();
       const m = now.getMonth(); // 0-indexed
@@ -172,12 +180,12 @@ router.get('/monthly', async (req: Request, res: Response) => {
 
     const students = await Student.find({ circleId, isActive: true }).sort({ name: 1 });
 
-    // Calculate dates of the month
-    const firstDay = new Date(y, m - 1, 1);
-    const lastDay = new Date(y, m, 0);
+    // Calculate dates of the month using UTC
+    const firstDay = new Date(Date.UTC(y, m - 1, 1));
+    const lastDay = new Date(Date.UTC(y, m, 0));
 
-    const startMonthStr = formatDate(firstDay);
-    const endMonthStr = formatDate(lastDay);
+    const startMonthStr = firstDay.toISOString().slice(0, 10);
+    const endMonthStr = lastDay.toISOString().slice(0, 10);
 
     // Fetch all attendance sessions in the month
     const attendanceSessions = await AttendanceSession.find({
@@ -241,7 +249,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
       }
     }
 
-    const todayStr = formatDate(new Date());
+    const todayStr = new Date().toISOString().slice(0, 10);
 
     // Build per-student report
     const studentReports = students.map((st) => {

@@ -14,7 +14,9 @@ import {
   LuPrinter,
   LuTriangleAlert,
   LuX,
+  LuRefreshCw,
 } from "react-icons/lu";
+import { FaWhatsapp } from "react-icons/fa6";
 
 // Palette constants matching the Framer design
 const G = "#184E3D";
@@ -83,15 +85,22 @@ export default function AttendancePage() {
   const [filter, setFilter] = useState<"الكل" | "حاضرة" | "غائبة" | "معتذرة">("الكل");
   const [searchQuery, setSearchQuery] = useState("");
   const [isReportOpen, setIsReportOpen] = useState(false);
-  const [reportType, setReportType] = useState<"تقرير الحلقة" | "تقرير أسبوعي" | "تقرير شهري">("تقرير الحلقة");
   const [copied, setCopied] = useState(false);
+  const [supervisorName, setSupervisorName] = useState("أمل طاهر");
+  const [editedReportText, setEditedReportText] = useState("");
 
-  // Load circles on mount
+  // Load circles and settings on mount
   useEffect(() => {
-    async function loadCircles() {
+    async function loadInitialData() {
       try {
-        const data = await api.getCircles();
+        const [data, settingsData] = await Promise.all([
+          api.getCircles(),
+          api.getSettings().catch(() => null),
+        ]);
         setCircles(data);
+        if (settingsData?.supervisorName) {
+          setSupervisorName(settingsData.supervisorName);
+        }
         if (data.length > 0) {
           const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
           const urlCircleId = params?.get("circleId");
@@ -105,7 +114,7 @@ export default function AttendancePage() {
         setErrorMessage("فشل في تحميل الحلقات");
       }
     }
-    loadCircles();
+    loadInitialData();
   }, []);
 
   // Load attendance session when circle or date changes
@@ -453,45 +462,130 @@ export default function AttendancePage() {
     }
   }, [date]);
 
-  // Generate copyable text report
+  // Generate copyable text report (قائمة الحضور والغياب وحجز الأدوار للواتساب)
   const generatedReportText = useMemo(() => {
-    const title = currentCircle?.name || "حلقة القرآن";
-    let text = `${reportType} — ${title}\n${formattedDateArabic}\nبسم الله الرحمن الرحيم\n\n`;
+    const circleName = currentCircle?.name || "حلقة حفظ ربع البقره";
+    const teacherName = currentCircle?.teacherName || (currentCircle as any)?.notes || "سماح ابو الخير";
+    const supervisor = supervisorName || "أمل طاهر";
 
-    if (isHoliday) {
-      text += "هذا اليوم إجازة، ولا يُحتسب ضمن الحضور أو الغياب.\n";
-    } else {
-      text += records
-        .map((r) => {
-          if (r.status === "unrecorded") {
-            return `${r.studentName}: لم يُسجّل`;
-          }
-          if (r.status === "present") {
-            const heardStr = r.hasRecited ? "سمّعت" : "لم تسمّع";
-            const hwStr = r.homeworkCompleted ? "مكتمل" : "غير مكتمل";
-            const outStr = r.departureTime ? ` | الانصراف: ${r.departureTime}` : "";
-            return `${r.studentName}: حاضرة | الدور ${r.order || "—"} | ${heardStr} | الواجب: ${hwStr}${outStr}`;
-          }
-          if (r.status === "excused") {
-            return `${r.studentName}: معتذرة`;
-          }
-          return `${r.studentName}: غائبة`;
-        })
-        .join("\n");
+    const [y, m, d] = date.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const dayName = DAYS_AR[dt.getUTCDay()] || "";
+    const formattedDateHeader = `*${dayName} ${d}/ ${m}/ ${y}*`;
+
+    // 1. الحاضرات وحجز الأدوار
+    // يتم الترتيب وفق رقم الدور المسجل (order) التزاماً بالدور
+    const presentRecords = records
+      .filter((r) => r.status === "present")
+      .sort((a, b) => {
+        const orderA = a.order ?? 9999;
+        const orderB = b.order ?? 9999;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.studentName.localeCompare(b.studentName, "ar");
+      });
+
+    const presentByOrder = new Map<number, (typeof records)[0]>();
+    presentRecords.forEach((r, idx) => {
+      const ord = r.order ?? idx + 1;
+      presentByOrder.set(ord, r);
+    });
+
+    const totalSlots = Math.max(records.length, 12);
+    const presentLines: string[] = [];
+    for (let i = 1; i <= totalSlots; i++) {
+      const student = presentByOrder.get(i);
+      if (student) {
+        const recitedMark = student.hasRecited ? " ✅" : "";
+        presentLines.push(`🌷${i}-${student.studentName}${recitedMark}`);
+      } else {
+        presentLines.push(`🌷${i}- `);
+      }
     }
 
-    text += "\n\nالأيام غير المسجلة لا تُحتسب غيابًا. بارك الله فيكنّ.";
-    return text;
-  }, [reportType, currentCircle, formattedDateArabic, isHoliday, records]);
+    // 2. المعتذرات
+    const excusedRecords = records
+      .filter((r) => r.status === "excused")
+      .sort((a, b) => a.studentName.localeCompare(b.studentName, "ar"));
+    const excusedLines: string[] = [];
+    if (excusedRecords.length > 0) {
+      excusedRecords.forEach((r, idx) => {
+        excusedLines.push(`🌷${idx + 1}- ${r.studentName}`);
+      });
+    } else {
+      excusedLines.push("لا يوجد معتذرات");
+    }
+
+    // 3. الغياب
+    const absentRecords = records
+      .filter((r) => r.status === "absent")
+      .sort((a, b) => a.studentName.localeCompare(b.studentName, "ar"));
+    const absentLines: string[] = [];
+    if (absentRecords.length > 0) {
+      absentRecords.forEach((r, idx) => {
+        absentLines.push(`🌷${idx + 1}- ${r.studentName}`);
+      });
+    } else {
+      absentLines.push("لا يوجد غياب");
+    }
+
+    const cleanCircleName = circleName.startsWith("حلقة") ? circleName : `حلقة ${circleName}`;
+
+    return `قائمه الحضور والغياب وحجز الأدوار
+🌸🌷 ~ـــــــــ📚❁📚ــــــــــ~🌷🌸
+        *بسـمـ الله الرحمـن الرحيـمـ*
+                  *معهد الاتقان* 
+      *تحت إشراف الشيخة الفاضلة*
+             ♥️ *عواطف أم عمر*♥️
+*المجازة بالقراءات العشر الصغري والكبري* 
+                    *قسم الحفظ*
+           
+
+*نبدأ بعون اللّـه ${cleanCircleName}.*
+
+*للمعلمـــة :..👑* *${teacherName}* 
+ *المشرفه ** *${supervisor}**
+
+${formattedDateHeader}
+
+     *لآلــــ💎ـــــئ حلقتنا المتــــ💎ـــميزات*
+
+${presentLines.join("\n")}
+
+
+
+🌸🌷 ~ـــــــــ📚❁📚ــــــــــ~🌷🌸
+✍🏻 *المعتذرات*:
+${excusedLines.join("\n")}
+
+
+🌸🌷 ~ـــــــــ📚❁📚ــــــــــ~🌷🌸
+*الغياب* 😥 
+${absentLines.join("\n")}
+
+
+
+✨ 💞 ✨ 💞 ✨ 💞 ✨ 💞 ✨ 💞 ✨
+🔗 رابط الزوم
+🌸🌷`;
+  }, [currentCircle, supervisorName, date, records]);
+
+  // Sync edited report text
+  useEffect(() => {
+    setEditedReportText(generatedReportText);
+  }, [generatedReportText, isReportOpen]);
 
   const handleCopyReport = async () => {
     try {
-      await navigator.clipboard.writeText(generatedReportText);
+      await navigator.clipboard.writeText(editedReportText || generatedReportText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2200);
     } catch {
       alert("يرجى تحديد النص ونسخه يدوياً.");
     }
+  };
+
+  const handleResetReportText = () => {
+    setEditedReportText(generatedReportText);
   };
 
   useEffect(() => {
@@ -608,13 +702,13 @@ export default function AttendancePage() {
               )}
             </div>
 
-            {/* Report Button */}
+            {/* WhatsApp List Report Button */}
             <button
               onClick={() => setIsReportOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#184E3D] hover:bg-[#123e30] text-white text-xs sm:text-sm font-bold shadow-md transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold shadow-md transition-all cursor-pointer"
             >
-              <Icon kind="report" size={17} />
-              <span>تقرير الحلقة</span>
+              <FaWhatsapp className="w-4 h-4 text-emerald-200" />
+              <span>قائمة الحضور وحجز الأدوار</span>
             </button>
           </div>
         </div>
@@ -1051,71 +1145,83 @@ export default function AttendancePage() {
 
       {/* 2. REPORT MODAL (Copyable WhatsApp & Administrative Text Report) */}
       {isReportOpen && (
-        <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-[#E6E9E2] max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl border border-[#E6E9E2] max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#E6E9E2] pb-3">
-              <div className="flex items-center gap-2">
-                <Icon kind="report" size={20} />
-                <h3 className="font-extrabold text-base sm:text-lg text-[#184E3D]">
-                  تقرير متابعة الحلقة
-                </h3>
+            <div className="flex items-center justify-between border-b border-[#E6E9E2] pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-800 shrink-0">
+                  <FaWhatsapp className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base sm:text-lg text-[#184E3D]">
+                    قائمة الحضور والغياب وحجز الأدوار
+                  </h3>
+                  <p className="text-xs text-[#7C857D]">
+                    رسالة واتساب منسقة بحسب أدوار التسميع والمحاضرات والمعتذرات
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setIsReportOpen(false)}
-                className="text-[#7C857D] hover:text-[#184E3D] p-1 cursor-pointer"
+                className="text-[#7C857D] hover:text-[#184E3D] p-1.5 rounded-xl hover:bg-[#F0F5EC] transition-colors cursor-pointer"
               >
                 <LuX className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Report Type Tabs */}
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex gap-1.5">
-                {(["تقرير الحلقة", "تقرير أسبوعي", "تقرير شهري"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setReportType(t)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
-                      reportType === t
-                        ? "bg-[#184E3D] text-white border-[#184E3D]"
-                        : "bg-white text-[#184E3D] border-[#E6E9E2] hover:bg-[#F0F5EC]"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+            {/* Actions Bar */}
+            <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
+              <button
+                type="button"
+                onClick={handleResetReportText}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6E9E2] text-xs font-bold text-[#7C857D] hover:text-[#184E3D] hover:bg-[#F0F5EC] transition-colors cursor-pointer"
+              >
+                <LuRefreshCw className="w-3.5 h-3.5" />
+                <span>إعادة ضبط النص</span>
+              </button>
 
               <button
+                type="button"
                 onClick={handlePrint}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6E9E2] text-xs font-bold text-[#184E3D] hover:bg-[#F0F5EC] cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E6E9E2] text-xs font-bold text-[#184E3D] hover:bg-[#F0F5EC] transition-colors cursor-pointer"
               >
                 <LuPrinter className="w-3.5 h-3.5" />
                 <span>طباعة الكشف</span>
               </button>
             </div>
 
-            {/* Textarea containing copyable text */}
-            <textarea
-              aria-label="نص التقرير القابل للنسخ"
-              readOnly
-              value={generatedReportText}
-              rows={12}
-              className="w-full flex-1 p-3.5 rounded-xl border border-[#E6E9E2] bg-[#FAFBF7] text-xs sm:text-sm text-[#184E3D] font-mono leading-relaxed focus:outline-none resize-none"
-            />
+            {/* Textarea containing copyable and editable text */}
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <textarea
+                aria-label="نص القائمة القابل للنسخ والتعديل"
+                value={editedReportText}
+                onChange={(e) => setEditedReportText(e.target.value)}
+                dir="rtl"
+                className="w-full h-80 sm:h-96 md:h-[420px] p-4 rounded-2xl border border-[#E6E9E2] bg-[#FAFBF7] text-xs sm:text-sm text-[#184E3D] font-mono leading-relaxed focus:outline-hidden focus:border-[#184E3D] resize-none selection:bg-emerald-100 selection:text-emerald-900 overflow-y-auto"
+              />
+            </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between pt-2">
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-2 border-t border-[#E6E9E2] shrink-0">
               <span className="text-xs text-[#7C857D]">
-                جاهز للمشاركة المباشرة عبر واتساب أو طباعته ككشف معتمد.
+                جاهز للمشاركة المباشرة عبر واتساب أو التعديل عليه.
               </span>
               <button
                 onClick={handleCopyReport}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#184E3D] hover:bg-[#123e30] text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer transition-all"
               >
-                <Icon kind="copy" size={16} />
-                <span>{copied ? "تم النسخ بنجاح! ✓" : "نسخ التقرير"}</span>
+                {copied ? (
+                  <>
+                    <LuCheck className="w-4 h-4 text-emerald-200" />
+                    <span>تم النسخ بنجاح! ✓</span>
+                  </>
+                ) : (
+                  <>
+                    <LuCopy className="w-4 h-4" />
+                    <span>نسخ القائمة للواتساب</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

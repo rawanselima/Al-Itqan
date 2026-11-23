@@ -89,7 +89,14 @@ export const api = {
     if (params?.search) query.append('search', params.search);
     return request<any[]>(`/students?${query.toString()}`);
   },
-  createStudent: (data: { name: string; phone?: string; circleId: string }) =>
+  createStudent: (data: {
+    name: string;
+    phone?: string;
+    circleId: string;
+    joinedAt?: string;
+    leftAt?: string | null;
+    warningForRemoval?: boolean;
+  }) =>
     request<any>('/students', { method: 'POST', body: JSON.stringify(data) }),
   updateStudent: (id: string, data: any) =>
     request<any>(`/students/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -193,10 +200,15 @@ export const api = {
       }>;
     }>(`/reports/monthly?circleId=${circleId}&year=${year}&month=${month}`),
 
-  getHomeworkReport: (circleId: string, from?: string, to?: string) => {
+  getHomeworkReport: (circleId: string, yearOrFrom?: number | string, monthOrTo?: number | string) => {
     const params = new URLSearchParams({ circleId });
-    if (from) params.append("from", from);
-    if (to) params.append("to", to);
+    if (typeof yearOrFrom === "number") {
+      params.append("year", String(yearOrFrom));
+      if (monthOrTo) params.append("month", String(monthOrTo));
+    } else if (typeof yearOrFrom === "string") {
+      params.append("from", yearOrFrom);
+      if (monthOrTo) params.append("to", String(monthOrTo));
+    }
     return request<{
       report: any;
       warnings: Array<{ studentName: string; date: string; type: "homework" | "attendance" }>;

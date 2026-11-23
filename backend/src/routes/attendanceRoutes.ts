@@ -64,6 +64,7 @@ router.get('/', async (req: Request, res: Response) => {
           hasRecited: rec.hasRecited,
           order: rec.order,
           notes: rec.notes || '',
+          departureTime: rec.departureTime || null,
         };
       }
       return {
@@ -74,6 +75,7 @@ router.get('/', async (req: Request, res: Response) => {
         hasRecited: false,
         order: null,
         notes: '',
+        departureTime: null,
       };
     });
 
@@ -112,6 +114,7 @@ router.post('/', async (req: Request, res: Response) => {
       hasRecited: Boolean(r.hasRecited),
       order: r.order ?? null,
       notes: r.notes || '',
+      departureTime: r.departureTime || null,
     }));
 
     const session = await AttendanceSession.findOneAndUpdate(

@@ -184,8 +184,8 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
     });
 
     // بالنسبة لـ circleB يوم 2026-11-08 ليس إجازة
-    // بما أنه لم يُسجّل له واجب، سيظهر ▫️ (notRecorded) وليس ➖
-    assert.strictEqual(resB.students[0].weeks[0].symbols, `${SYMBOLS.notRecorded}${SYMBOLS.notRecorded}`);
+    // بما أنه لم يُسجّل له واجب، سيظهر ❗ (notDone) وليس ➖
+    assert.strictEqual(resB.students[0].weeks[0].symbols, `${SYMBOLS.notDone}${SYMBOLS.notDone}`);
   });
 
   // 8. طالبة انضمت في نص الشهر: الأيام قبل joinedAt مش موجودة
@@ -242,8 +242,8 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
     assert.strictEqual(res.students[0].weeks[0].symbols, `${SYMBOLS.done}${SYMBOLS.done}`);
   });
 
-  // 10. مفيش HomeworkRecord ليوم عدّى: ▫️ مش ❗، وبتظهر في warnings
-  it('Case 10: Missing homework record for a past day shows ▫️ and adds a warning', () => {
+  // 10. مفيش HomeworkRecord ليوم عدّى في أسبوع منتهٍ: يعتبر لم يتم وتوضع علامة ❗
+  it('Case 10: Missing homework record for a past day shows ❗ and treats as not done', () => {
     const res = buildReport({
       from: '2026-11-07',
       to: '2026-11-07', // يوم واحد
@@ -253,15 +253,11 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
       today: '2026-11-08',
     });
 
-    assert.strictEqual(res.students[0].weeks[0].symbols, SYMBOLS.notRecorded);
-    assert.strictEqual(res.warnings.length, 1);
-    assert.strictEqual(res.warnings[0].type, 'homework');
-    assert.strictEqual(res.warnings[0].date, '2026-11-07');
-    assert.strictEqual(res.warnings[0].studentName, student1.name);
+    assert.strictEqual(res.students[0].weeks[0].symbols, SYMBOLS.notDone);
   });
 
-  // 11. جلسة ملهاش record لطالبة: ▫️ مش 🛑، وبتظهر في warnings
-  it('Case 11: Missing attendance record for a student in a session shows ▫️ and adds a warning', () => {
+  // 11. جلسة ملهاش record لطالبة: تعتبر غياب 🛑
+  it('Case 11: Missing attendance record for a student in a session shows 🛑', () => {
     const sessions = [
       {
         circleId: 'circle1',
@@ -279,14 +275,13 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
       today: '2026-11-09',
     });
 
-    assert.strictEqual(res.students[0].attendanceSymbols, SYMBOLS.notRecorded);
-    assert.ok(res.warnings.some((w) => w.type === 'attendance' && w.date === '2026-11-08'));
+    assert.strictEqual(res.students[0].attendanceSymbols, SYMBOLS.absent);
   });
 
-  // 12. شهر لسه شغال: الأيام بعد today فاضية
-  it('Case 12: Ongoing month leaves future days empty without symbols', () => {
+  // 12. أسبوع لم ينتهِ بعد (week.endDate > today): تترك خانة الرموز فارغة
+  it('Case 12: Ongoing week not yet finished leaves symbols empty', () => {
     // الأسبوع من السبت 2026-11-07 إلى الخميس 2026-11-12
-    // اليوم هو الأحد 2026-11-08
+    // اليوم هو الأحد 2026-11-08 (الأسبوع لم ينتهِ بعد)
     const homework = [
       { studentId: 'st1', circleId: 'circle1', date: '2026-11-07', status: 'done' as const },
       { studentId: 'st1', circleId: 'circle1', date: '2026-11-08', status: 'done' as const },
@@ -301,8 +296,9 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
       today: '2026-11-08',
     });
 
-    // فقط يومين مسجلين، الأيام القادمة (9, 10, 11, 12) فارغة ولم تضاف لها ▫️ ولا ❗
-    assert.strictEqual(res.students[0].weeks[0].symbols, `${SYMBOLS.done}${SYMBOLS.done}`);
+    // الأسبوع لم ينتهِ بعد -> تترك خانة الرموز فارغة والأوسمة null
+    assert.strictEqual(res.students[0].weeks[0].symbols, '');
+    assert.strictEqual(res.students[0].weeks[0].award, null);
   });
 
   // 13. جلسة تعويض في يوم مش من أيام الحلقة: بتظهر

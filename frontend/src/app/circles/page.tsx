@@ -22,6 +22,7 @@ export default function CirclesPage() {
 
   // Form State
   const [name, setName] = useState("");
+  const [teacherName, setTeacherName] = useState("");
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
@@ -47,6 +48,7 @@ export default function CirclesPage() {
   const openAddModal = () => {
     setEditingCircle(null);
     setName("");
+    setTeacherName("");
     setSelectedDays(["الإثنين", "الخميس"]);
     setTime("04:00 م");
     setNotes("");
@@ -57,7 +59,8 @@ export default function CirclesPage() {
   const openEditModal = (circle: Circle) => {
     setEditingCircle(circle);
     setName(circle.name);
-    setSelectedDays(circle.days ? circle.days.map(getDayName) : []);
+    setTeacherName(circle.teacherName || "");
+    setSelectedDays(Array.isArray(circle.days) ? circle.days.map(getDayName) : []);
     setTime(circle.time || "");
     setNotes(circle.notes || "");
     setError("");
@@ -93,6 +96,7 @@ export default function CirclesPage() {
       if (editingCircle) {
         await api.updateCircle(editingCircle._id, {
           name,
+          teacherName,
           days: selectedDays,
           time,
           notes,
@@ -100,6 +104,7 @@ export default function CirclesPage() {
       } else {
         await api.createCircle({
           name,
+          teacherName,
           days: selectedDays,
           time,
           notes,
@@ -177,9 +182,16 @@ export default function CirclesPage() {
             >
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
-                  <h3 className="font-extrabold text-base sm:text-lg text-text-main group-hover:text-primary transition-colors">
-                    {circle.name}
-                  </h3>
+                  <div>
+                    <h3 className="font-extrabold text-base sm:text-lg text-text-main group-hover:text-primary transition-colors">
+                      {circle.name}
+                    </h3>
+                    {circle.teacherName && (
+                      <div className="text-xs text-text-muted mt-0.5">
+                        المعلمة: <span className="font-bold text-text-main">{circle.teacherName}</span>
+                      </div>
+                    )}
+                  </div>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-primary-light text-primary">
                     {circle.time}
                   </span>
@@ -189,7 +201,7 @@ export default function CirclesPage() {
                 <div className="space-y-1.5">
                   <span className="text-xs text-text-muted font-medium">أيام الانعقاد:</span>
                   <div className="flex flex-wrap gap-1.5">
-                    {circle.days.map((day) => (
+                    {(circle.days || []).map((day) => (
                       <span
                         key={String(day)}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-beige text-text-main border border-surface-border"
@@ -270,6 +282,17 @@ export default function CirclesPage() {
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
                   required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-text-main">اسم المعلمة</label>
+                <input
+                  type="text"
+                  placeholder="مثال: أ/ سماح أبو الخير"
+                  value={teacherName}
+                  onChange={(e) => setTeacherName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
                 />
               </div>
 

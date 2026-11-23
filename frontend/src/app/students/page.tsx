@@ -21,10 +21,13 @@ interface Student {
   circleId: {
     _id: string;
     name: string;
-    days?: string[];
+    days?: (string | number)[];
     time?: string;
   };
   isActive: boolean;
+  joinedAt?: string;
+  leftAt?: string | null;
+  warningForRemoval?: boolean;
 }
 
 export default function StudentsPage() {
@@ -44,6 +47,8 @@ export default function StudentsPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [circleId, setCircleId] = useState("");
+  const [joinedAt, setJoinedAt] = useState("");
+  const [warningForRemoval, setWarningForRemoval] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -75,6 +80,8 @@ export default function StudentsPage() {
     setName("");
     setPhone("");
     setCircleId(selectedCircleId || (circles[0]?._id ?? ""));
+    setJoinedAt(new Date().toISOString().slice(0, 10));
+    setWarningForRemoval(false);
     setError("");
     setIsModalOpen(true);
   };
@@ -84,8 +91,22 @@ export default function StudentsPage() {
     setName(student.name);
     setPhone(student.phone || "");
     setCircleId(student.circleId?._id || "");
+    setJoinedAt(student.joinedAt || new Date().toISOString().slice(0, 10));
+    setWarningForRemoval(Boolean(student.warningForRemoval));
     setError("");
     setIsModalOpen(true);
+  };
+
+  const handleToggleWarning = async (student: Student) => {
+    try {
+      const newVal = !student.warningForRemoval;
+      await api.updateStudent(student._id, { warningForRemoval: newVal });
+      setStudents((prev) =>
+        prev.map((s) => (s._id === student._id ? { ...s, warningForRemoval: newVal } : s))
+      );
+    } catch {
+      alert("فشل تحديث علامة التحذير بالحذف");
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -107,12 +128,16 @@ export default function StudentsPage() {
           name,
           phone,
           circleId,
+          joinedAt,
+          warningForRemoval,
         });
       } else {
         await api.createStudent({
           name,
           phone,
           circleId,
+          joinedAt,
+          warningForRemoval,
         });
       }
       setIsModalOpen(false);
@@ -230,7 +255,16 @@ export default function StudentsPage() {
                 {students.map((student, idx) => (
                   <tr key={student._id} className="hover:bg-beige/40 transition-colors">
                     <td className="py-3 sm:py-4 px-3 sm:px-6 text-text-muted text-xs font-bold">{idx + 1}</td>
-                    <td className="py-3 sm:py-4 px-3 sm:px-6 font-bold text-text-main">{student.name}</td>
+                    <td className="py-3 sm:py-4 px-3 sm:px-6 font-bold text-text-main">
+                      <div className="flex items-center gap-2">
+                        <span>{student.name}</span>
+                        {student.warningForRemoval && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[11px] font-bold">
+                            ⚠️ تحذير بالحذف
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3 sm:py-4 px-3 sm:px-6">
                       <span className="inline-block px-2.5 py-1 rounded-lg bg-primary-light text-primary text-xs font-bold">
                         {student.circleId?.name || "بدون حلقة"}
@@ -253,6 +287,18 @@ export default function StudentsPage() {
                     </td>
                     <td className="py-3 sm:py-4 px-3 sm:px-6 text-center">
                       <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleWarning(student)}
+                          className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+                            student.warningForRemoval
+                              ? "bg-amber-100 border-amber-300 text-amber-900"
+                              : "border-surface-border text-text-muted hover:bg-beige"
+                          }`}
+                          title={student.warningForRemoval ? "إلغاء التحذير بالحذف" : "وضع تحذير بالحذف ⚠️"}
+                        >
+                          <LuTriangleAlert className="w-3 h-3" />
+                        </button>
                         <button
                           onClick={() => openEditModal(student)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg border border-surface-border hover:bg-beige transition-colors cursor-pointer"
@@ -337,6 +383,28 @@ export default function StudentsPage() {
                   }))}
                   icon={<LuBookOpen className="w-4 h-4 text-primary" />}
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-text-main">تاريخ الانضمام للحلقة</label>
+                <input
+                  type="date"
+                  value={joinedAt}
+                  onChange={(e) => setJoinedAt(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface font-mono"
+                />
+              </div>
+
+              <div className="pt-1">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-text-main">
+                  <input
+                    type="checkbox"
+                    checked={warningForRemoval}
+                    onChange={(e) => setWarningForRemoval(e.target.checked)}
+                    className="w-4 h-4 rounded text-primary focus:ring-primary border-surface-border cursor-pointer"
+                  />
+                  <span>وضع علامة تحذير بالحذف (⚠️) في التقارير</span>
+                </label>
               </div>
 
               <div className="flex gap-2 sm:gap-3 pt-2 sm:pt-3">
