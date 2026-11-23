@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, Circle } from "@/lib/api";
+import { api, Circle, formatCircleDays } from "@/lib/api";
+import { CustomSelect } from "@/components/CustomSelect";
+import {
+  LuUserPlus,
+  LuTriangleAlert,
+  LuGraduationCap,
+  LuPencil,
+  LuTrash2,
+  LuX,
+  LuBookOpen,
+} from "react-icons/lu";
+import { FaWhatsapp } from "react-icons/fa6";
 
 interface Student {
   _id: string;
@@ -126,125 +137,135 @@ export default function StudentsPage() {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-extrabold text-slate-800">إدارة الطالبات</h2>
-          <p className="text-sm text-slate-500 mt-1">
+          <h2 className="text-xl sm:text-2xl font-extrabold text-text-main">إدارة الطالبات</h2>
+          <p className="text-xs sm:text-sm text-text-muted mt-1">
             تسجيل الطالبات وربطهن بالحلقات وتعديل بياناتهن
           </p>
         </div>
         <button
+          suppressHydrationWarning
           onClick={openAddModal}
           disabled={circles.length === 0}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-700 text-white font-bold text-sm shadow-md hover:bg-emerald-800 transition-all disabled:opacity-50 cursor-pointer"
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-primary text-white font-bold text-sm shadow-md hover:bg-primary-hover transition-all disabled:opacity-50 cursor-pointer"
         >
-          <span>➕</span>
+          <LuUserPlus className="w-4 h-4" />
           <span>إضافة طالبة جديدة</span>
         </button>
       </div>
 
       {circles.length === 0 && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-          ⚠️ يرجى إضافة حلقة أولاً من صفحة الحلقات حتى تتمكن من تسجيل الطالبات وربطهن بها.
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+          <LuTriangleAlert className="w-4 h-4 text-amber-700 shrink-0" />
+          <span>يرجى إضافة حلقة أولاً من صفحة الحلقات حتى تتمكن من تسجيل الطالبات وربطهن بها.</span>
         </div>
       )}
 
       {/* Filters Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row gap-4 items-center justify-between">
+      <div className="bg-surface rounded-2xl p-4 border border-surface-border shadow-xs flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center justify-between">
         <div className="flex flex-1 flex-col sm:flex-row gap-3 w-full">
           {/* Circle Selector */}
-          <select
-            value={selectedCircleId}
-            onChange={(e) => setSelectedCircleId(e.target.value)}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 bg-white focus:outline-none focus:border-emerald-600"
-          >
-            <option value="">جميع الحلقات ({circles.length})</option>
-            {circles.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.name} ({c.days.join("، ")})
-              </option>
-            ))}
-          </select>
+          <div className="w-full sm:w-64">
+            <CustomSelect
+              value={selectedCircleId}
+              onChange={(val) => setSelectedCircleId(val as string)}
+              options={[
+                { value: "", label: `جميع الحلقات (${circles.length})` },
+                ...circles.map((c) => ({
+                  value: c._id,
+                  label: c.name,
+                  badge: formatCircleDays(c.days),
+                })),
+              ]}
+              icon={<LuBookOpen className="w-4 h-4 text-primary" />}
+            />
+          </div>
 
           {/* Search Box */}
           <div className="relative flex-1">
             <input
+              suppressHydrationWarning
               type="text"
               placeholder="ابحث باسم الطالبة أو رقم الهاتف..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-emerald-600"
+              className="w-full px-4 py-2.5 rounded-xl border border-surface-border text-xs sm:text-sm focus:outline-none focus:border-primary bg-surface text-text-main"
             />
           </div>
         </div>
 
-        <div className="text-xs text-slate-500 font-semibold">
-          عدد الطالبات: <span className="text-emerald-700 font-bold">{students.length}</span>
+        <div className="text-xs text-text-muted font-semibold text-center sm:text-right">
+          عدد الطالبات: <span className="text-primary font-bold">{students.length}</span>
         </div>
       </div>
 
       {/* Table of Students */}
       {loading ? (
-        <div className="p-12 text-center text-slate-400">جاري تحميل بيانات الطالبات...</div>
+        <div className="p-12 text-center text-text-muted">جاري تحميل بيانات الطالبات...</div>
       ) : students.length === 0 ? (
-        <div className="p-16 text-center bg-white rounded-3xl border border-dashed border-slate-300 space-y-3">
-          <div className="text-4xl">👩‍🎓</div>
-          <h3 className="text-base font-bold text-slate-700">لا توجد طالبات مطابقة للبحث</h3>
-          <p className="text-xs text-slate-500">قم بإضافة طالبة جديدة أو تغيير فلاتر البحث.</p>
+        <div className="p-12 sm:p-16 text-center bg-surface rounded-2xl sm:rounded-3xl border border-dashed border-surface-border space-y-3">
+          <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center text-primary mx-auto">
+            <LuGraduationCap className="w-8 h-8" />
+          </div>
+          <h3 className="text-base font-bold text-text-main">لا توجد طالبات مطابقة للبحث</h3>
+          <p className="text-xs text-text-muted">قم بإضافة طالبة جديدة أو تغيير فلاتر البحث.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+        <div className="bg-surface rounded-2xl sm:rounded-3xl border border-surface-border overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-right text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs font-bold border-b border-slate-200">
+            <table className="w-full text-right text-xs sm:text-sm min-w-[500px]">
+              <thead className="bg-beige/70 text-text-muted text-xs font-bold border-b border-surface-border">
                 <tr>
-                  <th className="py-4 px-6">م</th>
-                  <th className="py-4 px-6">اسم الطالبة</th>
-                  <th className="py-4 px-6">الحلقة</th>
-                  <th className="py-4 px-6">رقم الهاتف</th>
-                  <th className="py-4 px-6 text-center">الإجراءات</th>
+                  <th className="py-3 sm:py-4 px-3 sm:px-6 w-12">م</th>
+                  <th className="py-3 sm:py-4 px-3 sm:px-6">اسم الطالبة</th>
+                  <th className="py-3 sm:py-4 px-3 sm:px-6">الحلقة</th>
+                  <th className="py-3 sm:py-4 px-3 sm:px-6">رقم الهاتف</th>
+                  <th className="py-3 sm:py-4 px-3 sm:px-6 text-center w-28">الإجراءات</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+              <tbody className="divide-y divide-surface-border font-medium text-text-main">
                 {students.map((student, idx) => (
-                  <tr key={student._id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-4 px-6 text-slate-400 text-xs font-bold">{idx + 1}</td>
-                    <td className="py-4 px-6 font-bold text-slate-800">{student.name}</td>
-                    <td className="py-4 px-6">
-                      <span className="inline-block px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold">
+                  <tr key={student._id} className="hover:bg-beige/40 transition-colors">
+                    <td className="py-3 sm:py-4 px-3 sm:px-6 text-text-muted text-xs font-bold">{idx + 1}</td>
+                    <td className="py-3 sm:py-4 px-3 sm:px-6 font-bold text-text-main">{student.name}</td>
+                    <td className="py-3 sm:py-4 px-3 sm:px-6">
+                      <span className="inline-block px-2.5 py-1 rounded-lg bg-primary-light text-primary text-xs font-bold">
                         {student.circleId?.name || "بدون حلقة"}
                       </span>
                     </td>
-                    <td className="py-4 px-6">
+                    <td className="py-3 sm:py-4 px-3 sm:px-6">
                       {student.phone ? (
                         <a
                           href={`https://wa.me/${student.phone.replace(/[^0-9]/g, "")}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-emerald-700 hover:underline"
+                          className="inline-flex items-center gap-1.5 text-xs text-primary font-bold hover:underline"
                         >
-                          <span>💬</span>
+                          <FaWhatsapp className="w-4 h-4 text-emerald-600 shrink-0" />
                           <span dir="ltr">{student.phone}</span>
                         </a>
                       ) : (
-                        <span className="text-xs text-slate-400">-</span>
+                        <span className="text-xs text-text-muted">-</span>
                       )}
                     </td>
-                    <td className="py-4 px-6 text-center">
-                      <div className="inline-flex items-center gap-2">
+                    <td className="py-3 sm:py-4 px-3 sm:px-6 text-center">
+                      <div className="inline-flex items-center gap-1.5">
                         <button
                           onClick={() => openEditModal(student)}
-                          className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg border border-surface-border hover:bg-beige transition-colors cursor-pointer"
                         >
-                          تعديل
+                          <LuPencil className="w-3 h-3" />
+                          <span>تعديل</span>
                         </button>
                         <button
                           onClick={() => handleDelete(student)}
-                          className="px-3 py-1.5 text-xs font-bold rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                         >
-                          حذف
+                          <LuTrash2 className="w-3 h-3" />
+                          <span>حذف</span>
                         </button>
                       </div>
                     </td>
@@ -258,17 +279,17 @@ export default function StudentsPage() {
 
       {/* Add / Edit Student Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-lg font-bold text-slate-800">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-surface rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-md w-full shadow-2xl border border-surface-border space-y-4 sm:space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-surface-border pb-3 sm:pb-4">
+              <h3 className="text-base sm:text-lg font-bold text-text-main">
                 {editingStudent ? "تعديل بيانات الطالبة" : "تسجيل طالبة جديدة"}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer"
+                className="text-text-muted hover:text-text-main p-1 cursor-pointer"
               >
-                ✕
+                <LuX className="w-5 h-5" />
               </button>
             </div>
 
@@ -280,58 +301,56 @@ export default function StudentsPage() {
 
             <form onSubmit={handleSave} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">اسم الطالبة *</label>
+                <label className="text-xs font-bold text-text-main">اسم الطالبة *</label>
                 <input
                   type="text"
                   placeholder="الاسم ثلاثي أو ثنائي..."
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-600 text-sm"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
                   required
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">رقم الهاتف / الواتساب</label>
+                <label className="text-xs font-bold text-text-main">رقم الهاتف / الواتساب</label>
                 <input
                   type="tel"
                   dir="ltr"
                   placeholder="01xxxxxxxxx"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-600 text-sm text-right"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm text-right bg-surface"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">الحلقة *</label>
-                <select
+                <label className="text-xs font-bold text-text-main">الحلقة *</label>
+                <CustomSelect
+                  placeholder="اختر الحلقة..."
                   value={circleId}
-                  onChange={(e) => setCircleId(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-600 text-sm bg-white"
-                  required
-                >
-                  <option value="">اختر الحلقة...</option>
-                  {circles.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name} ({c.days.join("، ")})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setCircleId(val as string)}
+                  options={circles.map((c) => ({
+                    value: c._id,
+                    label: c.name,
+                    badge: formatCircleDays(c.days),
+                  }))}
+                  icon={<LuBookOpen className="w-4 h-4 text-primary" />}
+                />
               </div>
 
-              <div className="flex gap-3 pt-3">
+              <div className="flex gap-2 sm:gap-3 pt-2 sm:pt-3">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl border border-surface-border text-text-main font-bold text-xs hover:bg-beige cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-700 text-white font-bold text-xs hover:bg-emerald-800 disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
                 >
                   {saving ? "جاري الحفظ..." : "حفظ الطالبة"}
                 </button>

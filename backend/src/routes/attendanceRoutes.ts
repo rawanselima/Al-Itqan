@@ -7,6 +7,7 @@ const router = Router();
 
 // GET attendance session for a circle and date
 // If not yet created, returns a draft initialized with all active students of this circle
+
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { circleId, date } = req.query;
@@ -31,7 +32,7 @@ router.get('/', async (req: Request, res: Response) => {
         studentId: st._id,
         studentName: st.name,
         phone: st.phone,
-        status: 'absent',
+        status: 'unrecorded',
         hasRecited: false,
         order: null,
         notes: '',
@@ -41,6 +42,7 @@ router.get('/', async (req: Request, res: Response) => {
         circleId,
         date,
         isNew: true,
+        isHoliday: false,
         records: draftRecords,
       });
     }
@@ -68,7 +70,7 @@ router.get('/', async (req: Request, res: Response) => {
         studentId: st._id,
         studentName: st.name,
         phone: st.phone,
-        status: 'absent',
+        status: 'unrecorded',
         hasRecited: false,
         order: null,
         notes: '',
@@ -88,6 +90,7 @@ router.get('/', async (req: Request, res: Response) => {
       circleId,
       date,
       isNew: false,
+      isHoliday: Boolean(session.isHoliday),
       records: mergedRecords,
     });
   } catch (error: any) {
@@ -98,7 +101,7 @@ router.get('/', async (req: Request, res: Response) => {
 // POST save or update attendance session
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { circleId, date, records } = req.body;
+    const { circleId, date, records, isHoliday } = req.body;
     if (!circleId || !date || !Array.isArray(records)) {
       return res.status(400).json({ error: 'circleId و date و records مطلوبة' });
     }
@@ -113,7 +116,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const session = await AttendanceSession.findOneAndUpdate(
       { circleId, date },
-      { circleId, date, records: cleanRecords },
+      { circleId, date, isHoliday: Boolean(isHoliday), records: cleanRecords },
       { new: true, upsert: true, runValidators: true }
     );
 

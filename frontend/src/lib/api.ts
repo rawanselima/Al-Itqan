@@ -22,11 +22,54 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export interface Circle {
   _id: string;
   name: string;
-  days: string[];
+  teacherName?: string;
+  days: (number | string)[];
   time: string;
   notes?: string;
   studentCount?: number;
   createdAt?: string;
+}
+
+export interface Holiday {
+  _id: string;
+  circleId?: { _id: string; name: string } | string | null;
+  from: string;
+  to: string;
+  reason?: string;
+  createdAt?: string;
+}
+
+export interface Settings {
+  _id?: string;
+  supervisorName: string;
+  introText?: string;
+  outroText?: string;
+}
+
+export const DAYS_NAMES: Record<number, string> = {
+  0: "الأحد",
+  1: "الإثنين",
+  2: "الثلاثاء",
+  3: "الأربعاء",
+  4: "الخميس",
+  5: "الجمعة",
+  6: "السبت",
+};
+
+export function getDayName(d: number | string): string {
+  if (typeof d === "number") {
+    return DAYS_NAMES[d] || String(d);
+  }
+  const n = Number(d);
+  if (!isNaN(n) && n in DAYS_NAMES) {
+    return DAYS_NAMES[n];
+  }
+  return String(d);
+}
+
+export function formatCircleDays(days?: Array<number | string>, separator = "، "): string {
+  if (!days || !Array.isArray(days)) return "";
+  return days.map(getDayName).join(separator);
 }
 
 export const api = {
@@ -59,21 +102,24 @@ export const api = {
       circleId: string;
       date: string;
       isNew: boolean;
+      isHoliday?: boolean;
       records: Array<{
         studentId: string;
         studentName: string;
         phone: string;
-        status: 'present' | 'absent' | 'excused';
+        status: 'present' | 'absent' | 'excused' | 'unrecorded';
         hasRecited: boolean;
         order: number | null;
         notes?: string;
+        homeworkCompleted?: boolean;
+        departureTime?: string | null;
       }>;
     }>(`/attendance?circleId=${circleId}&date=${date}`),
 
-  saveAttendance: (circleId: string, date: string, records: any[]) =>
+  saveAttendance: (circleId: string, date: string, records: any[], isHoliday?: boolean) =>
     request<{ message: string; session: any }>('/attendance', {
       method: 'POST',
-      body: JSON.stringify({ circleId, date, records }),
+      body: JSON.stringify({ circleId, date, records, isHoliday }),
     }),
 
   // Homework
@@ -110,6 +156,22 @@ export const api = {
         studentId: string;
         name: string;
         phone: string;
+        attendanceHistory?: Array<{
+          date: string;
+          status: 'present' | 'absent' | 'excused' | 'unrecorded';
+        }>;
+        weeklyDetails?: Array<{
+          weekNumber: number;
+          weekName: string;
+          startDate: string;
+          endDate: string;
+          days: Array<{
+            date: string;
+            completed: boolean | null;
+          }>;
+          completedDays: number;
+          badge: 'medal' | 'trophy' | null;
+        }>;
         weeklyStats: Array<{
           weekNumber: number;
           weekName: string;
@@ -130,4 +192,30 @@ export const api = {
         };
       }>;
     }>(`/reports/monthly?circleId=${circleId}&year=${year}&month=${month}`),
+
+  getHomeworkReport: (circleId: string, from?: string, to?: string) => {
+    const params = new URLSearchParams({ circleId });
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+    return request<{
+      report: any;
+      warnings: Array<{ studentName: string; date: string; type: "homework" | "attendance" }>;
+      text: string;
+    }>(`/reports/homework?${params.toString()}`);
+  },
+
+  // Holidays
+  getHolidays: (circleId?: string) => {
+    const q = circleId ? `?circleId=${circleId}` : "";
+    return request<Holiday[]>(`/holidays${q}`);
+  },
+  createHoliday: (data: { circleId?: string | null; from: string; to: string; reason?: string }) =>
+    request<Holiday>("/holidays", { method: "POST", body: JSON.stringify(data) }),
+  deleteHoliday: (id: string) =>
+    request<{ message: string }>(`/holidays/${id}`, { method: "DELETE" }),
+
+  // Settings
+  getSettings: () => request<Settings>("/settings"),
+  updateSettings: (data: Partial<Settings>) =>
+    request<Settings>("/settings", { method: "PUT", body: JSON.stringify(data) }),
 };

@@ -1,10 +1,147 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import Student from '../models/Student';
 import AttendanceSession from '../models/AttendanceSession';
 import HomeworkRecord from '../models/HomeworkRecord';
 import Circle from '../models/Circle';
+import Holiday from '../models/Holiday';
+import Settings from '../models/Settings';
+import { buildReport } from '../utils/buildReport';
+import { renderReportText } from '../utils/renderReportText';
 
 const router = Router();
+
+// مخطط التحقق من معلمات التقرير باستخدام Zod
+const homeworkReportQuerySchema = z.object({
+  circleId: z.string().min(1, 'معرف الحلقة مطلوب'),
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'صيغة تاريخ البداية يجب أن تكون YYYY-MM-DD')
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'صيغة تاريخ النهاية يجب أن تكون YYYY-MM-DD')
+    .optional(),
+});
+
+// GET /api/reports/homework
+// نقطة النهاية لتوليد تقرير الواجبات والحضور (أسبوعي أو شهري)
+router.get('/homework', async (req: Request, res: Response) => {
+  try {
+    // 1. التحقق من المدخلات باستخدام Zod
+    const parseResult = homeworkReportQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: parseResult.error.issues?.[0]?.message || 'بيانات الاستعلام غير صالحة',
+      });
+    }
+
+    const { circleId } = parseResult.data;
+    let { from, to } = parseResult.data;
+
+    // 2. إذا لم يتم تمرير from و to، يتم الافتراض على الشهر الحالي بالكامل
+    if (!from || !to) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth(); // 0-indexed
+      from = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+      to = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
+    }
+
+    if (from > to) {
+      return res.status(400).json({ error: 'تاريخ البداية (from) لا يمكن أن يكون بعد تاريخ النهاية (to)' });
+    }
+
+    // 3. استعلام بيانات الحلقة
+    const circle = await Circle.findById(circleId).lean();
+    if (!circle) {
+      return res.status(404).json({ error: 'الحلقة المطلوبة غير موجودة' });
+    }
+
+    // 4. استعلامات موازية (Single query per collection)
+    // نجلب فقط ما نحتاجه للفترة المحددة لتوفير الموارد
+    const [students, sessions, homework, holidays, settings] = await Promise.all([
+      Student.find({ circleId, isActive: true }).sort({ name: 1 }).lean(),
+      AttendanceSession.find({
+        circleId,
+        date: { $gte: from, $lte: to },
+      }).lean(),
+      HomeworkRecord.find({
+        circleId,
+        date: { $gte: from, $lte: to },
+      }).lean(),
+      Holiday.find({
+        $or: [{ circleId: null }, { circleId }],
+      }).lean(),
+      Settings.findOne().lean(),
+    ]);
+
+    // 5. استدعاء الدالة النقية buildReport
+    const report = buildReport({
+      from,
+      to,
+      circle: {
+        _id: String(circle._id),
+        name: circle.name,
+        teacherName: circle.teacherName || circle.notes || 'معلمة الحلقة',
+        days: circle.days as number[],
+        time: circle.time,
+      },
+      students: students.map((s: any) => ({
+        _id: String(s._id),
+        name: s.name,
+        joinedAt: s.joinedAt,
+        leftAt: s.leftAt,
+        warningForRemoval: Boolean(s.warningForRemoval),
+      })),
+      sessions: sessions.map((sess: any) => ({
+        _id: String(sess._id),
+        circleId: String(sess.circleId),
+        date: sess.date,
+        isHoliday: sess.isHoliday,
+        records: (sess.records || []).map((r: any) => ({
+          studentId: String(r.studentId),
+          status: r.status,
+          hasRecited: r.hasRecited,
+        })),
+      })),
+      homework: homework.map((hw: any) => ({
+        _id: String(hw._id),
+        studentId: String(hw.studentId),
+        circleId: String(hw.circleId),
+        date: hw.date,
+        status: hw.status,
+      })),
+      holidays: holidays.map((h: any) => ({
+        _id: String(h._id),
+        circleId: h.circleId ? String(h.circleId) : null,
+        from: h.from,
+        to: h.to,
+        reason: h.reason,
+      })),
+      today: new Date().toISOString().slice(0, 10),
+    });
+
+    // 6. استدعاء الدالة النقية renderReportText لتوليد نص الواتساب الجاهز
+    const text = renderReportText(report, {
+      supervisorName: settings?.supervisorName || 'امل طاهر',
+      introText: settings?.introText,
+      outroText: settings?.outroText,
+    });
+
+    // 7. إرجاع النتيجة
+    res.json({
+      report: {
+        ...report,
+        usedSymbols: Array.from(report.usedSymbols), // تحويل Set إلى Array لتتوافق مع JSON
+      },
+      warnings: report.warnings,
+      text,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'حدث خطأ في الخادم أثناء توليد التقرير' });
+  }
+});
 
 // Helper to get formatted date string YYYY-MM-DD
 function formatDate(d: Date): string {
@@ -84,6 +221,8 @@ router.get('/monthly', async (req: Request, res: Response) => {
       if (currentStart > totalDays) break;
     }
 
+    const todayStr = formatDate(new Date());
+
     // Build per-student report
     const studentReports = students.map((st) => {
       let totalPresent = 0;
@@ -91,6 +230,19 @@ router.get('/monthly', async (req: Request, res: Response) => {
       let totalExcused = 0;
       let totalRecited = 0;
       let totalHomeworkDays = 0;
+
+      // Extract attendance history across all sessions in the month
+      const attendanceHistory = attendanceSessions
+        .filter((session) => !session.isHoliday)
+        .map((session) => {
+          const rec = session.records.find((r) => String(r.studentId) === String(st._id));
+          return {
+            date: session.date,
+            status: rec ? rec.status : 'unrecorded',
+          };
+        });
+
+      const weeklyDetails: any[] = [];
 
       const weeklyStats = weeks.map((week) => {
         // Attendance in this week
@@ -100,7 +252,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
         let weekRecited = 0;
 
         attendanceSessions.forEach((session) => {
-          if (session.date >= week.startDate && session.date <= week.endDate) {
+          if (session.date >= week.startDate && session.date <= week.endDate && !session.isHoliday) {
             const rec = session.records.find((r) => String(r.studentId) === String(st._id));
             if (rec) {
               if (rec.status === 'present') {
@@ -115,7 +267,46 @@ router.get('/monthly', async (req: Request, res: Response) => {
           }
         });
 
-        // Homework in this week
+        // Homework days in this week (excluding Fridays)
+        const weekDays: Array<{ date: string; completed: boolean | null }> = [];
+        const startD = new Date(week.startDate + 'T12:00:00');
+        const endD = new Date(week.endDate + 'T12:00:00');
+
+        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+          if (d.getDay() === 5) continue; // Skip Friday
+          const dateStr = formatDate(d);
+          if (dateStr > todayStr) {
+            weekDays.push({ date: dateStr, completed: null });
+          } else {
+            const hw = homeworkRecords.find(
+              (h) => String(h.studentId) === String(st._id) && h.date === dateStr
+            );
+            weekDays.push({ date: dateStr, completed: hw ? Boolean(hw.completed) : false });
+          }
+        }
+
+        const pastDays = weekDays.filter((d) => d.completed !== null);
+        const completedDays = pastDays.filter((d) => d.completed === true).length;
+
+        let badge: 'medal' | 'trophy' | null = null;
+        if (pastDays.length > 0 && completedDays === pastDays.length) {
+          if (weekAbsent === 0 && weekExcused === 0 && weekPresent > 0) {
+            badge = 'medal'; // 🏅 اتمتت المهام والحضور
+          } else {
+            badge = 'trophy'; // 🏆 اتمتت عمل المهام
+          }
+        }
+
+        weeklyDetails.push({
+          weekNumber: week.weekNumber,
+          weekName: week.name,
+          startDate: week.startDate,
+          endDate: week.endDate,
+          days: weekDays,
+          completedDays,
+          badge,
+        });
+
         const weekHwRecords = homeworkRecords.filter(
           (hw) =>
             String(hw.studentId) === String(st._id) &&
@@ -148,6 +339,8 @@ router.get('/monthly', async (req: Request, res: Response) => {
         studentId: st._id,
         name: st.name,
         phone: st.phone,
+        attendanceHistory,
+        weeklyDetails,
         weeklyStats,
         totals: {
           present: totalPresent,

@@ -34,7 +34,7 @@ router.get('/', async (req: Request, res: Response) => {
 // POST create student
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, phone, circleId } = req.body;
+    const { name, phone, circleId, joinedAt, leftAt, warningForRemoval } = req.body;
     if (!name || !circleId) {
       return res.status(400).json({ error: 'اسم الطالبة والحلقة حقول مطلوبة' });
     }
@@ -50,6 +50,9 @@ router.post('/', async (req: Request, res: Response) => {
       phone: phone || '',
       circleId,
       isActive: true,
+      joinedAt: joinedAt || new Date().toISOString().split('T')[0],
+      leftAt: leftAt || null,
+      warningForRemoval: Boolean(warningForRemoval),
     });
 
     const saved = await newStudent.save();
@@ -63,10 +66,19 @@ router.post('/', async (req: Request, res: Response) => {
 // PUT update student
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { name, phone, circleId, isActive } = req.body;
+    const { name, phone, circleId, isActive, joinedAt, leftAt, warningForRemoval } = req.body;
+    const updateObj: any = {};
+    if (name !== undefined) updateObj.name = name;
+    if (phone !== undefined) updateObj.phone = phone;
+    if (circleId !== undefined) updateObj.circleId = circleId;
+    if (isActive !== undefined) updateObj.isActive = isActive;
+    if (joinedAt !== undefined) updateObj.joinedAt = joinedAt;
+    if (leftAt !== undefined) updateObj.leftAt = leftAt;
+    if (warningForRemoval !== undefined) updateObj.warningForRemoval = warningForRemoval;
+
     const updated = await Student.findByIdAndUpdate(
       req.params.id,
-      { name, phone, circleId, isActive },
+      updateObj,
       { new: true, runValidators: true }
     ).populate('circleId', 'name');
 

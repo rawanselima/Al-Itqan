@@ -1,36 +1,105 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { api, Circle } from "@/lib/api";
+import React, { useEffect, useState, useMemo, useRef } from "react";
+import { api, Circle, formatCircleDays } from "@/lib/api";
+import { CustomSelect } from "@/components/CustomSelect";
+import {
+  LuBookOpen,
+  LuUsers,
+  LuCalendar,
+  LuFileText,
+  LuCheck,
+  LuCopy,
+  LuLayoutGrid,
+  LuPrinter,
+  LuTriangleAlert,
+  LuX,
+} from "react-icons/lu";
+
+// Palette constants matching the Framer design
+const G = "#184E3D";
+const muted = "#7C857D";
+const line = "#E6E9E2";
+const cream = "#F6F5F0";
+
+const DAYS_AR = [
+  "الأحد",
+  "الإثنين",
+  "الثلاثاء",
+  "الأربعاء",
+  "الخميس",
+  "الجمعة",
+  "السبت",
+];
 
 interface AttendanceRecord {
   studentId: string;
   studentName: string;
   phone: string;
-  status: "present" | "absent" | "excused";
+  status: "present" | "absent" | "excused" | "unrecorded";
   hasRecited: boolean;
   order: number | null;
   notes?: string;
+  homeworkCompleted?: boolean;
+  departureTime?: string | null;
+}
+
+// Icons using react-icons
+function Icon({ kind = "grid", size = 18 }: { kind?: string; size?: number }) {
+  const props = { size, className: "shrink-0" };
+  switch (kind) {
+    case "book":
+      return <LuBookOpen {...props} />;
+    case "users":
+      return <LuUsers {...props} />;
+    case "calendar":
+      return <LuCalendar {...props} />;
+    case "report":
+      return <LuFileText {...props} />;
+    case "check":
+      return <LuCheck {...props} />;
+    case "copy":
+      return <LuCopy {...props} />;
+    default:
+      return <LuLayoutGrid {...props} />;
+  }
 }
 
 export default function AttendancePage() {
+  const [mounted, setMounted] = useState(false);
   const [circles, setCircles] = useState<Circle[]>([]);
   const [selectedCircleId, setSelectedCircleId] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [isHoliday, setIsHoliday] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Load Circles on Mount
+  const isLoadedRef = useRef(false);
+  const lastSavedSnapshotRef = useRef<string>("");
+
+  // Filters & Report Modal
+  const [filter, setFilter] = useState<"الكل" | "حاضرة" | "غائبة" | "معتذرة">("الكل");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportType, setReportType] = useState<"تقرير الحلقة" | "تقرير أسبوعي" | "تقرير شهري">("تقرير الحلقة");
+  const [copied, setCopied] = useState(false);
+
+  // Load circles on mount
   useEffect(() => {
     async function loadCircles() {
       try {
         const data = await api.getCircles();
         setCircles(data);
         if (data.length > 0) {
-          setSelectedCircleId(data[0]._id);
+          const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+          const urlCircleId = params?.get("circleId");
+          if (urlCircleId && data.some((c) => c._id === urlCircleId)) {
+            setSelectedCircleId(urlCircleId);
+          } else {
+            setSelectedCircleId(data[0]._id);
+          }
         }
       } catch (err: any) {
         setErrorMessage("فشل في تحميل الحلقات");
@@ -39,17 +108,25 @@ export default function AttendancePage() {
     loadCircles();
   }, []);
 
-  // Load Attendance Session when Circle or Date changes
+  // Load attendance session when circle or date changes
   useEffect(() => {
     if (!selectedCircleId || !date) return;
 
     async function loadAttendance() {
       try {
         setLoading(true);
-        setSuccessMessage("");
+        isLoadedRef.current = false;
         setErrorMessage("");
         const res = await api.getAttendance(selectedCircleId, date);
-        setRecords(res.records || []);
+        const loadedRecords = res.records || [];
+        const loadedHoliday = Boolean(res.isHoliday);
+        setRecords(loadedRecords);
+        setIsHoliday(loadedHoliday);
+        lastSavedSnapshotRef.current = JSON.stringify({
+          records: loadedRecords,
+          isHoliday: loadedHoliday,
+        });
+        isLoadedRef.current = true;
       } catch (err: any) {
         setErrorMessage(err.message || "حدث خطأ أثناء تحميل سجل الحضور");
       } finally {
@@ -60,25 +137,59 @@ export default function AttendancePage() {
     loadAttendance();
   }, [selectedCircleId, date]);
 
-  // Selected Circle Details
+  // Auto-Save Effect: Automatically persists any change to records or holiday
+  useEffect(() => {
+    if (!isLoadedRef.current || !selectedCircleId || !date) return;
+
+    const currentSnapshot = JSON.stringify({ records, isHoliday });
+    if (currentSnapshot === lastSavedSnapshotRef.current) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setSaveStatus("saving");
+        await api.saveAttendance(selectedCircleId, date, records, isHoliday);
+        lastSavedSnapshotRef.current = currentSnapshot;
+        setSaveStatus("saved");
+        setTimeout(() => {
+          setSaveStatus("idle");
+        }, 3000);
+      } catch (err: any) {
+        setSaveStatus("error");
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [records, isHoliday, selectedCircleId, date]);
+
   const currentCircle = circles.find((c) => c._id === selectedCircleId);
 
-  // Stats calculation
+  // Statistics calculation
   const stats = useMemo(() => {
+    const total = records.length;
     const present = records.filter((r) => r.status === "present").length;
+    const heard = records.filter((r) => r.status === "present" && r.hasRecited).length;
+    const waiting = Math.max(0, present - heard);
     const absent = records.filter((r) => r.status === "absent").length;
     const excused = records.filter((r) => r.status === "excused").length;
-    const recited = records.filter((r) => r.status === "present" && r.hasRecited).length;
-    return { total: records.length, present, absent, excused, recited };
+    return { total, present, heard, waiting, absent, excused };
   }, [records]);
 
-  // Handle Changing Attendance Status
+  // Handle status change
   const handleStatusChange = (
     studentId: string,
-    newStatus: "present" | "absent" | "excused"
+    newStatusArabic: "لم يُسجّل" | "حاضرة" | "غائبة" | "معتذرة"
   ) => {
+    if (isHoliday) return;
+
+    const statusMap: Record<string, "present" | "absent" | "excused" | "unrecorded"> = {
+      "حاضرة": "present",
+      "غائبة": "absent",
+      "معتذرة": "excused",
+      "لم يُسجّل": "unrecorded",
+    };
+    const newStatus = statusMap[newStatusArabic] || "unrecorded";
+
     setRecords((prev) => {
-      // Find current max order among present students
       const currentOrders = prev
         .filter((r) => r.status === "present" && r.order !== null)
         .map((r) => r.order as number);
@@ -88,67 +199,207 @@ export default function AttendancePage() {
         if (r.studentId !== studentId) return r;
 
         if (newStatus === "present") {
-          // If was not present, assign next order if none exists
-          const assignedOrder = r.order || nextOrder;
           return {
             ...r,
             status: "present",
-            order: assignedOrder,
+            order: r.order || nextOrder,
           };
         } else {
-          // Absent or excused -> reset order and recitation
           return {
             ...r,
             status: newStatus,
             hasRecited: false,
+            homeworkCompleted: false,
             order: null,
+            departureTime: null,
           };
         }
       });
     });
   };
 
-  // Handle Manual Order Override
-  const handleOrderChange = (studentId: string, val: string) => {
-    const num = val === "" ? null : parseInt(val, 10);
-    setRecords((prev) =>
-      prev.map((r) => (r.studentId === studentId ? { ...r, order: num } : r))
-    );
-  };
-
-  // Handle Recitation Toggle
+  // Toggle Recitation
   const handleToggleRecited = (studentId: string) => {
+    if (isHoliday) return;
     setRecords((prev) =>
       prev.map((r) =>
-        r.studentId === studentId ? { ...r, hasRecited: !r.hasRecited } : r
+        r.studentId === studentId && r.status === "present"
+          ? { ...r, hasRecited: !r.hasRecited }
+          : r
       )
     );
   };
 
-  // Save Attendance to Backend
-  const handleSave = async () => {
-    if (!selectedCircleId || !date) return;
-    try {
-      setSaving(true);
-      setSuccessMessage("");
-      setErrorMessage("");
-      await api.saveAttendance(selectedCircleId, date, records);
-      setSuccessMessage("✅ تم حفظ سجل الحضور بنجاح!");
-      setTimeout(() => setSuccessMessage(""), 4000);
-    } catch (err: any) {
-      setErrorMessage(err.message || "فشل حفظ سجل الحضور");
-    } finally {
-      setSaving(false);
+  // Toggle Homework
+  const handleToggleHomework = (studentId: string) => {
+    if (isHoliday) return;
+    setRecords((prev) =>
+      prev.map((r) =>
+        r.studentId === studentId && r.status === "present"
+          ? { ...r, homeworkCompleted: !r.homeworkCompleted }
+          : r
+      )
+    );
+  };
+
+  // Toggle Departure Time
+  const handleToggleDeparture = (studentId: string) => {
+    if (isHoliday) return;
+    const nowStr = new Date().toLocaleTimeString("ar-EG", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    setRecords((prev) =>
+      prev.map((r) => {
+        if (r.studentId !== studentId || r.status !== "present") return r;
+        return {
+          ...r,
+          departureTime: r.departureTime ? null : nowStr,
+        };
+      })
+    );
+  };
+
+  // Toggle Holiday
+  const handleToggleHoliday = () => {
+    setIsHoliday((prev) => !prev);
+  };
+
+  // Schedule view filter: "all" circles vs specific circleId
+  const [scheduleFilter, setScheduleFilter] = useState<string>("all");
+  const initialDateAdjustedRef = useRef(false);
+
+  // Helper to match circle days (supports numbers 0-6 and Arabic day strings)
+  const isDayMatch = (circleDay: number | string, dayIndex: number, targetDayName: string) => {
+    if (typeof circleDay === "number") {
+      return circleDay === dayIndex;
     }
+    const num = Number(circleDay);
+    if (!isNaN(num) && num >= 0 && num <= 6) {
+      return num === dayIndex;
+    }
+    const c = String(circleDay)
+      .trim()
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ة/g, "ه")
+      .toLowerCase();
+    const t = targetDayName
+      .trim()
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ة/g, "ه")
+      .toLowerCase();
+    return c.includes(t) || t.includes(c);
   };
 
-  // Trigger browser print
-  const handlePrint = () => {
-    window.print();
-  };
+  // Sessions of the current week across all circles (Sunday to Saturday)
+  // ONLY includes real scheduled days defined in circle.days
+  const weekSessions = useMemo(() => {
+    const selectedD = new Date(date + "T12:00:00");
+    const dayOfWeek = selectedD.getDay(); // 0 is Sunday
+    // Start of week (Sunday)
+    const sunday = new Date(selectedD);
+    sunday.setDate(sunday.getDate() - dayOfWeek);
 
-  // Records sorted for display & print:
-  // Present students with order first (1, 2, 3...), then by name
+    interface WeekSession {
+      key: string;
+      circleId: string;
+      circleName: string;
+      time: string;
+      dayName: string;
+      dateStr: string;
+      displayDate: string;
+      isSelected: boolean;
+      dayIndex: number;
+    }
+
+    const allSessions: WeekSession[] = [];
+
+    // Loop through the 7 days of the week (Sunday to Saturday)
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sunday);
+      d.setDate(d.getDate() + i);
+      const iso = d.toISOString().split("T")[0];
+      const dayName = DAYS_AR[i];
+      const displayDate = new Intl.DateTimeFormat("ar-EG", {
+        day: "numeric",
+        month: "long",
+      }).format(d);
+
+      // Circles meeting on this day strictly based on their configured days
+      const dayCircles = circles.filter((c) =>
+        c.days && c.days.some((cd) => isDayMatch(cd, i, dayName))
+      );
+
+      dayCircles.forEach((c) => {
+        allSessions.push({
+          key: `${c._id}-${iso}`,
+          circleId: c._id,
+          circleName: c.name,
+          time: c.time || "٤:٠٠ م",
+          dayName,
+          dateStr: iso,
+          displayDate,
+          isSelected: c._id === selectedCircleId && iso === date,
+          dayIndex: i,
+        });
+      });
+    }
+
+    // Sort chronologically by dateStr, then circleName
+    allSessions.sort((a, b) => {
+      const dateCmp = a.dateStr.localeCompare(b.dateStr);
+      if (dateCmp !== 0) return dateCmp;
+      return a.circleName.localeCompare(b.circleName, "ar");
+    });
+
+    return allSessions;
+  }, [date, circles, selectedCircleId]);
+
+  // Auto-align date to the first valid session on load if today has no session
+  useEffect(() => {
+    if (initialDateAdjustedRef.current || weekSessions.length === 0) return;
+
+    // Check if current date is already a session for selectedCircleId
+    const isCurrentDateSession = weekSessions.some(
+      (s) => s.circleId === selectedCircleId && s.dateStr === date
+    );
+
+    if (!isCurrentDateSession) {
+      const todayIso = new Date().toISOString().split("T")[0];
+      // Look for upcoming sessions today or later for selectedCircleId
+      const upcomingCircleSessions = weekSessions.filter(
+        (s) => s.circleId === selectedCircleId && s.dateStr >= todayIso
+      );
+      // Or any session for selectedCircleId
+      const circleSessions = weekSessions.filter((s) => s.circleId === selectedCircleId);
+      // Or any upcoming session
+      const allUpcoming = weekSessions.filter((s) => s.dateStr >= todayIso);
+
+      const target =
+        upcomingCircleSessions[0] ||
+        circleSessions[0] ||
+        allUpcoming[0] ||
+        weekSessions[0];
+
+      if (target) {
+        setDate(target.dateStr);
+        setSelectedCircleId(target.circleId);
+      }
+    }
+
+    initialDateAdjustedRef.current = true;
+  }, [weekSessions, selectedCircleId, date]);
+
+  // Filtered sessions based on scheduleFilter ("all" vs specific circleId)
+  const displayedWeekSessions = useMemo(() => {
+    if (scheduleFilter === "all") {
+      return weekSessions;
+    }
+    return weekSessions.filter((s) => s.circleId === scheduleFilter);
+  }, [weekSessions, scheduleFilter]);
+
+  // Sort: Present students with order first, then unrecorded / absent / excused
   const sortedRecords = useMemo(() => {
     return [...records].sort((a, b) => {
       if (a.order !== null && b.order !== null) return a.order - b.order;
@@ -158,295 +409,754 @@ export default function AttendancePage() {
     });
   }, [records]);
 
-  // Date formatted nicely in Arabic
-  const formattedDateArabic = new Intl.DateTimeFormat("ar-EG", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(new Date(date + "T00:00:00"));
+  // Filtered records
+  const filteredRecords = useMemo(() => {
+    return sortedRecords.filter((r) => {
+      // Filter by status tab
+      if (filter === "حاضرة" && r.status !== "present") return false;
+      if (filter === "غائبة" && r.status !== "absent") return false;
+      if (filter === "معتذرة" && r.status !== "excused") return false;
+
+      // Filter by search query
+      if (
+        searchQuery.trim() &&
+        !r.studentName.includes(searchQuery.trim()) &&
+        !r.phone?.includes(searchQuery.trim())
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [sortedRecords, filter, searchQuery]);
+
+  const formattedDateArabic = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat("ar-EG", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(new Date(date + "T12:00:00"));
+    } catch {
+      return date;
+    }
+  }, [date]);
+
+  const shortDateArabic = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat("ar-EG", {
+        day: "numeric",
+        month: "long",
+      }).format(new Date(date + "T12:00:00"));
+    } catch {
+      return date;
+    }
+  }, [date]);
+
+  // Generate copyable text report
+  const generatedReportText = useMemo(() => {
+    const title = currentCircle?.name || "حلقة القرآن";
+    let text = `${reportType} — ${title}\n${formattedDateArabic}\nبسم الله الرحمن الرحيم\n\n`;
+
+    if (isHoliday) {
+      text += "هذا اليوم إجازة، ولا يُحتسب ضمن الحضور أو الغياب.\n";
+    } else {
+      text += records
+        .map((r) => {
+          if (r.status === "unrecorded") {
+            return `${r.studentName}: لم يُسجّل`;
+          }
+          if (r.status === "present") {
+            const heardStr = r.hasRecited ? "سمّعت" : "لم تسمّع";
+            const hwStr = r.homeworkCompleted ? "مكتمل" : "غير مكتمل";
+            const outStr = r.departureTime ? ` | الانصراف: ${r.departureTime}` : "";
+            return `${r.studentName}: حاضرة | الدور ${r.order || "—"} | ${heardStr} | الواجب: ${hwStr}${outStr}`;
+          }
+          if (r.status === "excused") {
+            return `${r.studentName}: معتذرة`;
+          }
+          return `${r.studentName}: غائبة`;
+        })
+        .join("\n");
+    }
+
+    text += "\n\nالأيام غير المسجلة لا تُحتسب غيابًا. بارك الله فيكنّ.";
+    return text;
+  }, [reportType, currentCircle, formattedDateArabic, isHoliday, records]);
+
+  const handleCopyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedReportText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      alert("يرجى تحديد النص ونسخه يدوياً.");
+    }
+  };
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (!mounted) {
+    return (
+      <div
+        dir="rtl"
+        className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full min-h-screen"
+        style={{
+          backgroundColor: cream,
+          color: "#263C32",
+        }}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-2">
+            <div className="w-36 h-3 bg-slate-200/60 rounded-md animate-pulse" />
+            <div className="w-48 h-8 bg-slate-300/70 rounded-xl animate-pulse" />
+            <div className="w-56 h-3.5 bg-slate-200/60 rounded-md animate-pulse" />
+          </div>
+          <div className="flex gap-2">
+            <div className="w-28 h-10 bg-slate-200/70 rounded-xl animate-pulse" />
+            <div className="w-28 h-10 bg-[#184E3D]/30 rounded-xl animate-pulse" />
+          </div>
+        </div>
+
+        <div className="h-16 bg-[#EAF0E6] border border-[#DDE6D7] rounded-2xl animate-pulse" />
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 bg-white border border-[#E6E9E2] rounded-2xl animate-pulse" />
+          ))}
+        </div>
+
+        <div className="h-32 bg-white border border-[#E6E9E2] rounded-2xl animate-pulse" />
+
+        <div className="h-96 bg-white border border-[#E6E9E2] rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 space-y-6">
-      {/* 1. SCREEN VIEW (Hidden when printing) */}
+    <div
+      dir="rtl"
+      className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full"
+      style={{
+        backgroundColor: cream,
+        color: "#263C32",
+        minHeight: "100vh",
+      }}
+    >
+      {/* 1. SCREEN VIEW */}
       <div className="no-print space-y-6">
-        {/* Header */}
+        {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-800">دفتر الحضور والتسميع</h2>
-            <p className="text-sm text-slate-500 mt-1">
-              تسجيل الحضور بأسبقية الحضور، ومتابعة إنجاز التسميع لكل طالبة
-            </p>
+            <div className="text-xs text-[#7C857D] font-medium mb-1">
+              بسم الله، نبدأ يوماً مباركاً
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#184E3D] m-0">
+              متابعة الحلقة
+            </h1>
+            <div className="text-xs sm:text-sm text-[#7C857D] mt-1 font-medium">
+              خطوات بسيطة، ومتابعة تصنع أثراً.
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {/* Quick Circle Switcher */}
+            {circles.length > 1 && (
+              <div className="w-48 sm:w-56">
+                <CustomSelect
+                  value={selectedCircleId}
+                  onChange={(val) => setSelectedCircleId(val as string)}
+                  options={circles.map((c) => ({
+                    value: c._id,
+                    label: c.name,
+                    icon: <LuBookOpen className="w-3.5 h-3.5 text-[#184E3D]" />,
+                  }))}
+                  icon={<LuBookOpen className="w-4 h-4" />}
+                  placeholder="اختر الحلقة"
+                />
+              </div>
+            )}
+
+            {/* Auto-Save Status Indicator */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-[#E6E9E2] text-xs font-medium shadow-2xs select-none">
+              {saveStatus === "saving" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-[#7C857D] font-bold">جاري الحفظ تلقائيًا...</span>
+                </>
+              ) : saveStatus === "saved" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                  <span className="text-[#184E3D] font-bold">تم الحفظ تلقائيًا ✓</span>
+                </>
+              ) : saveStatus === "error" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  <span className="text-rose-600 font-bold">تعذّر الحفظ التلقائي</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 opacity-60" />
+                  <span className="text-[#7C857D]">حفظ تلقائي مفعّل</span>
+                </>
+              )}
+            </div>
+
+            {/* Report Button */}
             <button
-              onClick={handlePrint}
-              disabled={records.length === 0}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-bold shadow-xs hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+              onClick={() => setIsReportOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#184E3D] hover:bg-[#123e30] text-white text-xs sm:text-sm font-bold shadow-md transition-all cursor-pointer"
             >
-              <span>🖨️</span>
-              <span>طباعة كشف الجلسة</span>
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || records.length === 0}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-md hover:bg-emerald-800 disabled:opacity-50 cursor-pointer"
-            >
-              <span>💾</span>
-              <span>{saving ? "جاري الحفظ..." : "حفظ الحضور"}</span>
+              <Icon kind="report" size={17} />
+              <span>تقرير الحلقة</span>
             </button>
           </div>
         </div>
 
-        {/* Feedback Messages */}
-        {successMessage && (
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-bold">
-            {successMessage}
-          </div>
-        )}
+        {/* Feedback alerts */}
         {errorMessage && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-bold">
+          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm font-bold">
             {errorMessage}
           </div>
         )}
 
-        {/* Control Bar: Circle & Date Pickers */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-600">اختر الحلقة *</label>
-              <select
-                value={selectedCircleId}
-                onChange={(e) => setSelectedCircleId(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 bg-white focus:outline-none focus:border-emerald-600"
-              >
-                {circles.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name} ({c.days.join("، ")}) - {c.time}
-                  </option>
-                ))}
-              </select>
+        {/* Circle Info Banner */}
+        <div className="bg-[#EAF0E6] border border-[#DDE6D7] rounded-xl sm:rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div>
+            <strong className="text-base sm:text-lg font-bold text-[#184E3D]">
+              {currentCircle?.name || "حلقة أهل القرآن"}
+            </strong>
+            <span className="text-xs text-[#7C857D] mr-3 font-medium">
+              حفظ ومراجعة • {records.length} طالبات
+            </span>
+          </div>
+          <div className="text-xs sm:text-sm text-[#184E3D] font-bold">
+            المواعيد: {formatCircleDays(currentCircle?.days) || "الأحد، الثلاثاء، الخميس"} •{" "}
+            {currentCircle?.time || "٤:٠٠ مساءً"}
+          </div>
+        </div>
+
+        {/* 4 Statistics Cards (matching exact design) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* Card 1: إجمالي الطالبات */}
+          <div className="bg-white border border-[#E6E9E2] rounded-2xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-xs text-[#7C857D] font-medium">
+              <span>إجمالي الطالبات</span>
+              <Icon kind="users" size={18} />
+            </div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-[#184E3D] my-1">
+              {stats.total.toLocaleString("ar-EG")}
+            </div>
+            <div className="text-[11px] text-[#7C857D]">طالبات في الحلقة</div>
+          </div>
+
+          {/* Card 2: الحاضرات (Featured DARK GREEN card) */}
+          <div className="bg-[#184E3D] text-white border border-[#184E3D] rounded-2xl p-4 sm:p-5 shadow-md flex flex-col justify-between">
+            <div className="flex items-center justify-between text-xs text-[#D8E6DD] font-medium">
+              <span>الحاضرات</span>
+              <Icon kind="check" size={18} />
+            </div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-white my-1">
+              {stats.present.toLocaleString("ar-EG")}
+            </div>
+            <div className="text-[11px] text-[#C0D6CA]">حضور اليوم</div>
+          </div>
+
+          {/* Card 3: بانتظار التسميع */}
+          <div className="bg-white border border-[#E6E9E2] rounded-2xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-xs text-[#7C857D] font-medium">
+              <span>بانتظار التسميع</span>
+              <Icon kind="book" size={18} />
+            </div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-[#184E3D] my-1">
+              {stats.waiting.toLocaleString("ar-EG")}
+            </div>
+            <div className="text-[11px] text-[#7C857D]">حسب ترتيب الحضور</div>
+          </div>
+
+          {/* Card 4: أتممن التسميع */}
+          <div className="bg-white border border-[#E6E9E2] rounded-2xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-xs text-[#7C857D] font-medium">
+              <span>أتممن التسميع</span>
+              <Icon kind="report" size={18} />
+            </div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-[#184E3D] my-1">
+              {stats.heard.toLocaleString("ar-EG")}
+            </div>
+            <div className="text-[11px] text-[#7C857D]">بارك الله فيهنّ</div>
+          </div>
+        </div>
+
+        {/* Weekly Schedule: جدول هذا الأسبوع */}
+        <div className="bg-white border border-[#E6E9E2] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <strong className="text-sm sm:text-base font-bold text-[#184E3D]">
+                جدول هذا الأسبوع
+              </strong>
+
+              {/* Filter Pills with ALL Existing Circles */}
+              {circles.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* All Circles Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setScheduleFilter("all")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      scheduleFilter === "all"
+                        ? "bg-[#184E3D] text-white shadow-xs"
+                        : "bg-[#F6F5F0] text-[#7C857D] hover:bg-[#EAE8DE] hover:text-[#184E3D] border border-[#E6E9E2]"
+                    }`}
+                  >
+                    جميع الحلقات ({weekSessions.length})
+                  </button>
+
+                  {/* Individual Circle Pills for EVERY existing circle */}
+                  {circles.map((c) => {
+                    const circleSessionCount = weekSessions.filter(
+                      (s) => s.circleId === c._id
+                    ).length;
+                    const isActive = scheduleFilter === c._id;
+
+                    return (
+                      <button
+                        key={c._id}
+                        type="button"
+                        onClick={() => {
+                          setScheduleFilter(c._id);
+                          setSelectedCircleId(c._id);
+                          // Auto switch date to that circle's session if needed
+                          const circleSessions = weekSessions.filter(
+                            (s) => s.circleId === c._id
+                          );
+                          if (
+                            circleSessions.length > 0 &&
+                            !circleSessions.some((s) => s.dateStr === date)
+                          ) {
+                            setDate(circleSessions[0].dateStr);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                          isActive
+                            ? "bg-[#184E3D] text-white shadow-xs"
+                            : "bg-[#F6F5F0] text-[#7C857D] hover:bg-[#EAE8DE] hover:text-[#184E3D] border border-[#E6E9E2]"
+                        }`}
+                      >
+                        <LuBookOpen className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                        <span>{c.name}</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                            isActive
+                              ? "bg-white/20 text-white"
+                              : "bg-[#E6E9E2] text-[#7C857D]"
+                          }`}
+                        >
+                          {circleSessionCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-600">تاريخ الجلسة *</label>
+            <div className="flex items-center gap-2 self-end md:self-auto">
+              <span className="text-xs text-[#7C857D] font-medium hidden sm:inline">
+                تاريخ الأسبوع:
+              </span>
               <input
+                suppressHydrationWarning
+                aria-label="اختيار تاريخ الجلسة"
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 bg-white focus:outline-none focus:border-emerald-600"
+                className="px-3 py-1.5 rounded-lg border border-[#E6E9E2] text-xs font-bold text-[#184E3D] bg-white focus:outline-none focus:border-[#184E3D] cursor-pointer"
               />
             </div>
           </div>
 
-          {currentCircle && (
-            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500">
-              <div className="flex items-center gap-2">
-                <span>أيام الحلقة المعتمدة:</span>
-                <span className="font-bold text-emerald-800">
-                  {currentCircle.days.join(" و ")}
-                </span>
-                <span>- التوقيت:</span>
-                <span className="font-bold text-emerald-800">{currentCircle.time}</span>
-              </div>
-              <div className="font-medium text-slate-400">{formattedDateArabic}</div>
+          {/* Sessions cards row */}
+          {displayedWeekSessions.length === 0 ? (
+            <div className="p-4 text-center text-xs text-[#7C857D] bg-[#FAFBF7] rounded-xl border border-dashed border-[#E6E9E2]">
+              لا توجد حلقات مجدولة في هذا الأسبوع.
+            </div>
+          ) : (
+            <div className="flex gap-2.5 sm:gap-3 overflow-x-auto pb-1">
+              {displayedWeekSessions.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => {
+                    setDate(s.dateStr);
+                    setSelectedCircleId(s.circleId);
+                  }}
+                  className={`flex-1 min-w-[150px] sm:min-w-[185px] p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                    s.isSelected
+                      ? "bg-[#F0F5EC] border-[#72977D] shadow-xs ring-1 ring-[#184E3D]/15"
+                      : "bg-white border-[#E6E9E2] hover:bg-[#FAFBF7]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <strong className="text-xs sm:text-sm font-bold text-[#184E3D]">
+                      {s.dayName}
+                    </strong>
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        s.isSelected
+                          ? "bg-[#184E3D] text-white"
+                          : "text-[#7C857D] bg-[#F6F5F0]"
+                      }`}
+                    >
+                      {s.isSelected ? "الحلقة المختارة" : "موعد حلقة"}
+                    </span>
+                  </div>
+
+                  <div className="text-xs font-bold text-[#184E3D] mt-1.5 truncate flex items-center gap-1.5">
+                    <LuBookOpen className="w-3.5 h-3.5 text-[#7C857D] shrink-0" />
+                    <span className="truncate">{s.circleName}</span>
+                  </div>
+
+                  <div className="text-[11px] text-[#7C857D] mt-1 font-medium flex items-center justify-between">
+                    <span>{s.displayDate}</span>
+                    <span className="text-[10px]">{s.time}</span>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Quick Summary Badges */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <div className="bg-white p-3 rounded-2xl border border-slate-200 text-center">
-            <span className="text-xs text-slate-400">إجمالي المقيدات</span>
-            <p className="text-lg font-bold text-slate-800">{stats.total}</p>
+        {/* Main Attendance & Recitation Card */}
+        <div className="bg-white border border-[#E6E9E2] rounded-2xl shadow-2xs overflow-hidden">
+          {/* Card Header */}
+          <div className="p-4 sm:p-5 border-b border-[#E6E9E2] flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <strong className="text-base sm:text-lg font-bold text-[#184E3D]">
+                سجل الحضور والتسميع
+              </strong>
+              <div className="text-xs text-[#7C857D] mt-0.5 font-medium" suppressHydrationWarning>
+                {shortDateArabic} • ترتيب الدور يُسجّل تلقائيًا عند الحضور
+              </div>
+            </div>
+
+            <button
+              onClick={handleToggleHoliday}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                isHoliday
+                  ? "bg-[#F4EEDD] border-[#cbbca1] text-[#7B6541]"
+                  : "bg-white border-[#E6E9E2] text-[#184E3D] hover:bg-[#F0F5EC]"
+              }`}
+            >
+              {isHoliday ? "إلغاء الإجازة" : "تحديد اليوم إجازة"}
+            </button>
           </div>
-          <div className="bg-emerald-50/60 p-3 rounded-2xl border border-emerald-200 text-center">
-            <span className="text-xs text-emerald-700">الحاضرات</span>
-            <p className="text-lg font-bold text-emerald-800">{stats.present}</p>
+
+          {/* Holiday Notice Banner */}
+          {isHoliday && (
+            <div className="p-3.5 bg-[#F4EEDD] text-[#7B6541] border-b border-[#E6E9E2] text-xs font-bold flex items-center gap-2">
+              <LuTriangleAlert className="w-4 h-4 text-[#7B6541] shrink-0" />
+              <span>هذا اليوم إجازة؛ أُوقف التسجيل واستُبعد اليوم من التقارير الإحصائية.</span>
+            </div>
+          )}
+
+          {/* Filter Bar & Search */}
+          <div className="p-4 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-[#E6E9E2]/60">
+            {/* Filter pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {(["الكل", "حاضرة", "غائبة", "معتذرة"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                    filter === f
+                      ? "bg-[#184E3D] text-white border-[#184E3D] shadow-2xs"
+                      : "bg-white text-[#7C857D] border-transparent hover:bg-[#F0F5EC]"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Box */}
+            <input
+              suppressHydrationWarning
+              aria-label="بحث باسم الطالبة"
+              type="text"
+              placeholder="بحث باسم الطالبة…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="px-3.5 py-1.5 rounded-lg border border-[#E6E9E2] text-xs text-[#184E3D] bg-white focus:outline-none focus:border-[#184E3D] w-full sm:w-56"
+            />
           </div>
-          <div className="bg-teal-50/60 p-3 rounded-2xl border border-teal-200 text-center">
-            <span className="text-xs text-teal-700">أنجزن التسميع ✨</span>
-            <p className="text-lg font-bold text-teal-800">{stats.recited}</p>
-          </div>
-          <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200 text-center">
-            <span className="text-xs text-amber-700">المعتذرات</span>
-            <p className="text-lg font-bold text-amber-800">{stats.excused}</p>
-          </div>
-          <div className="bg-rose-50/60 p-3 rounded-2xl border border-rose-200 text-center">
-            <span className="text-xs text-rose-700">الغائبات</span>
-            <p className="text-lg font-bold text-rose-800">{stats.absent}</p>
+
+          {/* Table Container */}
+          {loading ? (
+            <div className="p-12 text-center text-[#7C857D] text-sm">
+              جاري تحميل سجل الحضور...
+            </div>
+          ) : records.length === 0 ? (
+            <div className="p-12 text-center text-[#7C857D] text-sm space-y-2">
+              <div className="w-14 h-14 rounded-2xl bg-[#EAF0E6] flex items-center justify-center text-[#184E3D] mx-auto">
+                <LuUsers className="w-7 h-7" />
+              </div>
+              <p className="font-bold text-[#184E3D]">لا توجد طالبات في هذه الحلقة</p>
+              <p className="text-xs">يرجى إضافة طالبات للحلقة من صفحة الطالبات.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs sm:text-sm min-w-[700px] border-collapse">
+                <thead>
+                  <tr className="bg-[#F8F9F5] text-[#7C857D] text-xs font-bold border-b border-[#E6E9E2]">
+                    <th className="py-3 px-5 w-2/6">الطالبة</th>
+                    <th className="py-3 px-4 text-center w-1/6">الحضور</th>
+                    <th className="py-3 px-4 text-center w-14">الدور</th>
+                    <th className="py-3 px-4 text-center w-1/6">التسميع</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E6E9E2]">
+                  {filteredRecords.map((r, idx) => {
+                    const isPresent = r.status === "present";
+                    const isExcused = r.status === "excused";
+                    const isAbsent = r.status === "absent";
+                  
+
+                    const statusArabic = isPresent
+                      ? "حاضرة"
+                      : isExcused
+                      ? "معتذرة"
+                      : isAbsent
+                      ? "غائبة"
+                      : "لم يُسجّل";
+
+                    const firstLetter = r.studentName.trim().charAt(0) || "ط";
+                    const avatarBg = idx % 2 === 0 ? "#EDF2E9" : "#F2EDDF";
+
+                    return (
+                      <tr
+                        key={r.studentId}
+                        className={`transition-colors hover:bg-[#F9FAF7] ${
+                          isHoliday ? "opacity-50" : ""
+                        }`}
+                      >
+                        {/* 1. الطالبة */}
+                        <td className="py-3.5 px-5">
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              style={{ backgroundColor: avatarBg, color: G }}
+                              className="w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 shadow-2xs"
+                            >
+                              {firstLetter}
+                            </span>
+                            <span className="font-bold text-[#182B23] text-sm">
+                              {r.studentName}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 2. الحضور (Custom Dropdown Pill) */}
+                        <td className="py-3.5 px-4 text-center">
+                          <CustomSelect
+                            variant="status"
+                            disabled={isHoliday}
+                            value={statusArabic}
+                            onChange={(newVal) =>
+                              handleStatusChange(r.studentId, newVal as any)
+                            }
+                            options={[
+                              { value: "لم يُسجّل", label: "لم يُسجّل" },
+                              { value: "حاضرة", label: "حاضرة" },
+                              { value: "غائبة", label: "غائبة" },
+                              { value: "معتذرة", label: "معتذرة" },
+                            ]}
+                          />
+                        </td>
+
+                        {/* 3. الدور */}
+                        <td className="py-3.5 px-4 text-center">
+                          {isPresent && r.order ? (
+                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-[#F0F4EC] text-[#184E3D] font-bold text-xs">
+                              {r.order.toLocaleString("ar-EG")}
+                            </span>
+                          ) : (
+                            <span className="text-[#7C857D] font-bold select-none">—</span>
+                          )}
+                        </td>
+
+                        {/* 4. التسميع */}
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            type="button"
+                            disabled={isHoliday || !isPresent}
+                            onClick={() => handleToggleRecited(r.studentId)}
+                            className={`inline-flex items-center gap-1.5 cursor-pointer select-none transition-opacity ${
+                              !isPresent || isHoliday
+                                ? "opacity-35 cursor-not-allowed"
+                                : "hover:opacity-85"
+                            }`}
+                          >
+                            <div
+                              className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
+                                r.hasRecited
+                                  ? "bg-[#184E3D] border-[#184E3D] text-white"
+                                  : "bg-white border-slate-300 text-transparent"
+                              }`}
+                            >
+                              <svg className="w-3 h-3 stroke-[3]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                            <span
+                              className={`text-xs ${
+                                r.hasRecited
+                                  ? "text-[#184E3D] font-bold"
+                                  : "text-[#7C857D] font-normal"
+                              }`}
+                            >
+                              {r.hasRecited ? "تم التسميع" : "لم تسمّع"}
+                            </span>
+                          </button>
+                        </td>                      
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Table Footer */}
+          <div className="p-3.5 sm:p-4 border-t border-[#E6E9E2] flex items-center justify-between text-xs text-[#7C857D] font-medium bg-[#FAFBF7]">
+            <div className="flex items-center gap-2">
+              <span>التسجيل تلقائي • يمكنكِ تعديل أي حالة</span>
+              {saveStatus === "saved" && (
+                <span className="text-[#184E3D] font-bold">✓ تم الحفظ تلقائيًا</span>
+              )}
+            </div>
+            <span>{records.length} طالبات</span>
           </div>
         </div>
 
-        {/* Students Attendance List */}
-        {loading ? (
-          <div className="p-12 text-center text-slate-400">جاري تحميل سجل الحضور...</div>
-        ) : records.length === 0 ? (
-          <div className="p-16 text-center bg-white rounded-3xl border border-dashed border-slate-300 space-y-2">
-            <div className="text-4xl">👥</div>
-            <h3 className="text-base font-bold text-slate-700">لا توجد طالبات في هذه الحلقة</h3>
-            <p className="text-xs text-slate-500">
-              يرجى إضافة طالبات للحلقة أولاً من صفحة الطالبات.
-            </p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between text-xs text-slate-500">
-              <span className="font-bold">
-                قائمة الطالبات (يتم الترتيب التلقائي برقم الأسبقية عند تحديد &quot;حاضرة&quot;)
-              </span>
-              <span>عدد الطالبات: {records.length}</span>
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {sortedRecords.map((student) => {
-                const isPresent = student.status === "present";
-                const isAbsent = student.status === "absent";
-                const isExcused = student.status === "excused";
-
-                return (
-                  <div
-                    key={student.studentId}
-                    className={`p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-colors ${
-                      isPresent
-                        ? "bg-emerald-50/30"
-                        : isExcused
-                        ? "bg-amber-50/20"
-                        : "bg-white"
-                    }`}
-                  >
-                    {/* Student Info & Order Badge */}
-                    <div className="flex items-center gap-3">
-                      {/* Attendance Order Number */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-slate-400 font-bold">رقم:</span>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="-"
-                          value={student.order ?? ""}
-                          onChange={(e) => handleOrderChange(student.studentId, e.target.value)}
-                          className={`w-12 h-9 text-center rounded-xl font-extrabold text-sm border focus:outline-none ${
-                            student.order
-                              ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
-                              : "bg-slate-100 text-slate-400 border-slate-200"
-                          }`}
-                          title="ترتيب أسبقية الحضور"
-                        />
-                      </div>
-
-                      <div>
-                        <h4 className="font-bold text-slate-800 text-sm sm:text-base">
-                          {student.studentName}
-                        </h4>
-                        {student.phone && (
-                          <span className="text-xs text-slate-400 font-sans" dir="ltr">
-                            {student.phone}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Attendance Status Buttons */}
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                      {/* Status: Present */}
-                      <button
-                        type="button"
-                        onClick={() => handleStatusChange(student.studentId, "present")}
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          isPresent
-                            ? "bg-emerald-700 text-white shadow-xs"
-                            : "bg-slate-100 text-slate-600 hover:bg-emerald-100/50"
-                        }`}
-                      >
-                        ✓ حاضرة
-                      </button>
-
-                      {/* Status: Excused */}
-                      <button
-                        type="button"
-                        onClick={() => handleStatusChange(student.studentId, "excused")}
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          isExcused
-                            ? "bg-amber-600 text-white shadow-xs"
-                            : "bg-slate-100 text-slate-600 hover:bg-amber-100/50"
-                        }`}
-                      >
-                        ⚠️ معتذرة
-                      </button>
-
-                      {/* Status: Absent */}
-                      <button
-                        type="button"
-                        onClick={() => handleStatusChange(student.studentId, "absent")}
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          isAbsent
-                            ? "bg-rose-600 text-white shadow-xs"
-                            : "bg-slate-100 text-slate-600 hover:bg-rose-100/50"
-                        }`}
-                      >
-                        ✕ غائبة
-                      </button>
-
-                      {/* Recitation Toggle (Only for Present) */}
-                      {isPresent && (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleRecited(student.studentId)}
-                          className={`mr-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                            student.hasRecited
-                              ? "bg-teal-700 text-white border-teal-700 shadow-xs"
-                              : "bg-white text-teal-800 border-teal-300 hover:bg-teal-50"
-                          }`}
-                        >
-                          {student.hasRecited ? "✨ سمّعت بنجاح" : "لم تُسمّع بعد"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {/* Bottom Reminder Note */}
+        <div className="p-3.5 sm:p-4 rounded-xl border border-dashed border-[#CFDAC9] bg-[#F7F8F0] text-xs text-[#7C857D] font-medium">
+          تذكير لطيف: بعد انتهاء الحلقة، راجعي التسميع والواجب ثم انسخي التقرير لمشاركته مع الإدارة.
+        </div>
       </div>
 
-      {/* 2. PRINT-ONLY REPORT (Clean A4 layout) */}
+      {/* 2. REPORT MODAL (Copyable WhatsApp & Administrative Text Report) */}
+      {isReportOpen && (
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-[#E6E9E2] max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#E6E9E2] pb-3">
+              <div className="flex items-center gap-2">
+                <Icon kind="report" size={20} />
+                <h3 className="font-extrabold text-base sm:text-lg text-[#184E3D]">
+                  تقرير متابعة الحلقة
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsReportOpen(false)}
+                className="text-[#7C857D] hover:text-[#184E3D] p-1 cursor-pointer"
+              >
+                <LuX className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Report Type Tabs */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex gap-1.5">
+                {(["تقرير الحلقة", "تقرير أسبوعي", "تقرير شهري"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setReportType(t)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      reportType === t
+                        ? "bg-[#184E3D] text-white border-[#184E3D]"
+                        : "bg-white text-[#184E3D] border-[#E6E9E2] hover:bg-[#F0F5EC]"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={handlePrint}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E6E9E2] text-xs font-bold text-[#184E3D] hover:bg-[#F0F5EC] cursor-pointer"
+              >
+                <LuPrinter className="w-3.5 h-3.5" />
+                <span>طباعة الكشف</span>
+              </button>
+            </div>
+
+            {/* Textarea containing copyable text */}
+            <textarea
+              aria-label="نص التقرير القابل للنسخ"
+              readOnly
+              value={generatedReportText}
+              rows={12}
+              className="w-full flex-1 p-3.5 rounded-xl border border-[#E6E9E2] bg-[#FAFBF7] text-xs sm:text-sm text-[#184E3D] font-mono leading-relaxed focus:outline-none resize-none"
+            />
+
+            {/* Actions */}
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs text-[#7C857D]">
+                جاهز للمشاركة المباشرة عبر واتساب أو طباعته ككشف معتمد.
+              </span>
+              <button
+                onClick={handleCopyReport}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#184E3D] hover:bg-[#123e30] text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer transition-all"
+              >
+                <Icon kind="copy" size={16} />
+                <span>{copied ? "تم النسخ بنجاح! ✓" : "نسخ التقرير"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. PRINT-ONLY A4 SESSION SHEET */}
       <div className="print-only p-4 font-sans text-black" dir="rtl">
-        {/* Printable Header */}
         <div className="text-center pb-6 border-b-2 border-black mb-6 space-y-2">
           <h1 className="text-2xl font-black">كشف حضور وتسميع حلقة التحفيظ</h1>
           <div className="flex justify-between items-center text-sm font-bold pt-2">
             <span>الحلقة: {currentCircle?.name || "حلقة القرآن"}</span>
             <span>التاريخ: {formattedDateArabic}</span>
-            <span>التوقيت: {currentCircle?.time}</span>
+            <span>التوقيت: {currentCircle?.time || "٤:٠٠ م"}</span>
           </div>
         </div>
 
-        {/* Print Summary */}
         <div className="grid grid-cols-4 gap-2 text-center text-xs font-bold mb-6 border border-black p-2 bg-slate-50">
           <div>إجمالي الطالبات: {stats.total}</div>
           <div>الحاضرات: {stats.present}</div>
-          <div>أنجزن التسميع: {stats.recited}</div>
+          <div>أتممن التسميع: {stats.heard}</div>
           <div>المعتذرات / الغائبات: {stats.excused + stats.absent}</div>
         </div>
 
-        {/* Printable Table (Strictly ordered by arrival order) */}
         <table className="w-full text-right border-collapse border border-black text-sm">
           <thead>
             <tr className="bg-slate-200 border-b border-black text-xs font-bold">
-              <th className="border border-black p-2 text-center w-14">الترتيب</th>
+              <th className="border border-black p-2 text-center w-14">الدور</th>
               <th className="border border-black p-2">اسم الطالبة</th>
-              <th className="border border-black p-2 text-center w-28">حالة الحضور</th>
-              <th className="border border-black p-2 text-center w-36">حالة التسميع</th>
-              <th className="border border-black p-2 text-center w-40">توقيع المعلمة / ملاحظات</th>
+              <th className="border border-black p-2 text-center w-24">الحضور</th>
+              <th className="border border-black p-2 text-center w-28">التسميع</th>
+              <th className="border border-black p-2 text-center w-24">الواجب</th>
+              <th className="border border-black p-2 text-center w-24">الانصراف</th>
+              <th className="border border-black p-2 text-center w-36">ملاحظات</th>
             </tr>
           </thead>
           <tbody>
-            {sortedRecords.map((r, idx) => (
+            {sortedRecords.map((r) => (
               <tr key={r.studentId} className="border-b border-black">
                 <td className="border border-black p-2 text-center font-bold">
-                  {r.order ?? idx + 1}
+                  {r.order ?? "—"}
                 </td>
                 <td className="border border-black p-2 font-bold">{r.studentName}</td>
                 <td className="border border-black p-2 text-center">
@@ -454,14 +1164,26 @@ export default function AttendancePage() {
                     ? "حاضرة"
                     : r.status === "excused"
                     ? "معتذرة"
-                    : "غائبة"}
+                    : r.status === "absent"
+                    ? "غائبة"
+                    : "لم يُسجّل"}
                 </td>
                 <td className="border border-black p-2 text-center font-bold">
                   {r.status === "present"
                     ? r.hasRecited
                       ? "✓ تم التسميع"
-                      : "لم تُسمّع"
-                    : "-"}
+                      : "لم تسمّع"
+                    : "—"}
+                </td>
+                <td className="border border-black p-2 text-center font-bold">
+                  {r.status === "present"
+                    ? r.homeworkCompleted
+                      ? "✓ مكتمل"
+                      : "غير مكتمل"
+                    : "—"}
+                </td>
+                <td className="border border-black p-2 text-center font-mono text-xs">
+                  {r.departureTime || "—"}
                 </td>
                 <td className="border border-black p-2 text-center text-xs text-slate-500"></td>
               </tr>
@@ -469,9 +1191,8 @@ export default function AttendancePage() {
           </tbody>
         </table>
 
-        {/* Printable Footer */}
         <div className="mt-12 flex justify-between items-center text-sm font-bold pt-8 border-t border-black">
-          <div>توقيع المشرف / المعلمة: .......................................</div>
+          <div>توقيع المشرفة / المعلمة: .......................................</div>
           <div>نظام الإتقان لإدارة الحلقات</div>
         </div>
       </div>

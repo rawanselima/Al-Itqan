@@ -33,14 +33,27 @@ router.get('/', async (req: Request, res: Response) => {
 // POST toggle homework completion status for student and date
 router.post('/toggle', async (req: Request, res: Response) => {
   try {
-    const { circleId, studentId, date, completed } = req.body;
+    const { circleId, studentId, date, completed, status } = req.body;
     if (!circleId || !studentId || !date) {
       return res.status(400).json({ error: 'circleId و studentId و date مطلوبة' });
     }
 
+    let finalStatus: 'done' | 'notDone' | 'partial' = 'notDone';
+    if (status && ['done', 'notDone', 'partial'].includes(status)) {
+      finalStatus = status;
+    } else if (completed !== undefined) {
+      finalStatus = completed ? 'done' : 'notDone';
+    }
+
     const record = await HomeworkRecord.findOneAndUpdate(
       { studentId, date },
-      { circleId, studentId, date, completed: Boolean(completed) },
+      {
+        circleId,
+        studentId,
+        date,
+        status: finalStatus,
+        completed: finalStatus === 'done',
+      },
       { new: true, upsert: true }
     );
 

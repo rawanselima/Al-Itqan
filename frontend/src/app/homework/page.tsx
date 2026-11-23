@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { api, Circle } from "@/lib/api";
+import { api, Circle, formatCircleDays } from "@/lib/api";
+import { CustomSelect } from "@/components/CustomSelect";
+import { HomeworkReportModal } from "@/components/HomeworkReportModal";
+import {
+  LuPrinter,
+  LuPenTool,
+  LuChevronRight,
+  LuChevronLeft,
+  LuBookOpen,
+  LuFileText,
+} from "react-icons/lu";
+import { FaWhatsapp } from "react-icons/fa6";
 
-// Days of homework: Saturday through Thursday (Friday off)
 const HOMEWORK_DAYS = [
   { key: "saturday", name: "السبت", offset: 0 },
   { key: "sunday", name: "الأحد", offset: 1 },
@@ -13,11 +23,9 @@ const HOMEWORK_DAYS = [
   { key: "thursday", name: "الخميس", offset: 5 },
 ];
 
-// Helper to get nearest Saturday for a date
 function getSaturdayOfWeek(d: Date): Date {
   const date = new Date(d);
-  const day = date.getDay(); // 0 is Sunday, 6 is Saturday
-  // Saturday is day 6. In JS, day 6 offset is 0, day 0 (Sunday) offset is -1, day 1 is -2, etc.
+  const day = date.getDay();
   const diff = day === 6 ? 0 : -(day + 1);
   date.setDate(date.getDate() + diff);
   date.setHours(0, 0, 0, 0);
@@ -38,15 +46,21 @@ export default function HomeworkPage() {
   const [students, setStudents] = useState<any[]>([]);
   const [recordsMap, setRecordsMap] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  // Load Circles on Mount
   useEffect(() => {
     async function loadCircles() {
       try {
         const data = await api.getCircles();
         setCircles(data);
         if (data.length > 0) {
-          setSelectedCircleId(data[0]._id);
+          const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+          const urlCircleId = params?.get("circleId");
+          if (urlCircleId && data.some((c) => c._id === urlCircleId)) {
+            setSelectedCircleId(urlCircleId);
+          } else {
+            setSelectedCircleId(data[0]._id);
+          }
         }
       } catch (err: any) {
         console.error(err);
@@ -55,7 +69,6 @@ export default function HomeworkPage() {
     loadCircles();
   }, []);
 
-  // Compute dates for Saturday through Thursday
   const weekDaysDates = useMemo(() => {
     return HOMEWORK_DAYS.map((day) => {
       const d = new Date(currentSaturday);
@@ -71,7 +84,6 @@ export default function HomeworkPage() {
   const startDate = weekDaysDates[0].dateStr;
   const endDate = weekDaysDates[weekDaysDates.length - 1].dateStr;
 
-  // Load Homework records for current week
   const loadHomework = async () => {
     if (!selectedCircleId) return;
     try {
@@ -81,7 +93,6 @@ export default function HomeworkPage() {
 
       const map = new Map<string, boolean>();
       res.records.forEach((r) => {
-        // key format: "studentId_YYYY-MM-DD"
         map.set(`${r.studentId}_${r.date}`, r.completed);
       });
       setRecordsMap(map);
@@ -96,7 +107,6 @@ export default function HomeworkPage() {
     loadHomework();
   }, [selectedCircleId, startDate, endDate]);
 
-  // Navigate Weeks
   const handlePrevWeek = () => {
     const prev = new Date(currentSaturday);
     prev.setDate(prev.getDate() - 7);
@@ -113,13 +123,11 @@ export default function HomeworkPage() {
     setCurrentSaturday(getSaturdayOfWeek(new Date()));
   };
 
-  // Toggle Homework cell
   const handleToggle = async (studentId: string, dateStr: string) => {
     const key = `${studentId}_${dateStr}`;
     const currentVal = Boolean(recordsMap.get(key));
     const newVal = !currentVal;
 
-    // Optimistic UI Update
     setRecordsMap((prev) => {
       const updated = new Map(prev);
       updated.set(key, newVal);
@@ -129,7 +137,6 @@ export default function HomeworkPage() {
     try {
       await api.toggleHomework(selectedCircleId, studentId, dateStr, newVal);
     } catch (err) {
-      // Revert if error
       setRecordsMap((prev) => {
         const updated = new Map(prev);
         updated.set(key, currentVal);
@@ -139,7 +146,6 @@ export default function HomeworkPage() {
     }
   };
 
-  // Print View
   const handlePrint = () => {
     window.print();
   };
@@ -147,104 +153,125 @@ export default function HomeworkPage() {
   const currentCircle = circles.find((c) => c._id === selectedCircleId);
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
       {/* 1. SCREEN VIEW */}
       <div className="no-print space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-800">متابعة الواجبات الأسبوعية</h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-text-main">متابعة الواجبات الأسبوعية</h2>
+            <p className="text-xs sm:text-sm text-text-muted mt-1">
               متابعة إنجاز الورد والواجب اليومي (من السبت إلى الخميس - الجمعة عطلة)
             </p>
           </div>
-          <button
-            onClick={handlePrint}
-            disabled={students.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-bold shadow-xs hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
-          >
-            <span>🖨️</span>
-            <span>طباعة كشف الواجبات</span>
-          </button>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              suppressHydrationWarning
+              onClick={() => setIsReportModalOpen(true)}
+              disabled={students.length === 0}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs sm:text-sm font-bold shadow-sm hover:bg-primary-hover disabled:opacity-50 cursor-pointer transition-all"
+            >
+              <FaWhatsapp className="w-4 h-4 text-emerald-300" />
+              <span>تقرير الواجب (شهري وأسبوعي)</span>
+            </button>
+
+            <button
+              suppressHydrationWarning
+              onClick={handlePrint}
+              disabled={students.length === 0}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-surface-border bg-surface text-text-main text-xs sm:text-sm font-bold shadow-xs hover:bg-beige disabled:opacity-50 cursor-pointer"
+            >
+              <LuPrinter className="w-4 h-4" />
+              <span>طباعة كشف الواجبات</span>
+            </button>
+          </div>
         </div>
 
         {/* Controls Bar */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="bg-surface rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-surface-border shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 sm:gap-4">
           {/* Circle Selector */}
           <div className="w-full md:w-72 space-y-1">
-            <label className="text-xs font-bold text-slate-600">اختر الحلقة</label>
-            <select
+            <label className="text-xs font-bold text-text-main">اختر الحلقة</label>
+            <CustomSelect
               value={selectedCircleId}
-              onChange={(e) => setSelectedCircleId(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 bg-white focus:outline-none focus:border-emerald-600"
-            >
-              {circles.map((c) => (
-                <option key={c._id} value={c._id}>
-                  {c.name} ({c.days.join("، ")})
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setSelectedCircleId(val as string)}
+              options={circles.map((c) => ({
+                value: c._id,
+                label: c.name,
+                badge: formatCircleDays(c.days),
+              }))}
+              icon={<LuBookOpen className="w-4 h-4 text-primary" />}
+            />
           </div>
 
           {/* Week Navigation */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2">
             <button
               onClick={handlePrevWeek}
-              className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-sm cursor-pointer"
+              className="px-2.5 py-2 rounded-xl border border-surface-border hover:bg-beige text-text-main font-bold text-xs sm:text-sm cursor-pointer"
               title="الأسبوع السابق"
             >
-              &rarr; الأسبوع السابق
+              <span className="inline-flex items-center gap-1">
+                <LuChevronRight className="w-4 h-4" />
+                <span>السابق</span>
+              </span>
             </button>
             <button
               onClick={handleCurrentWeek}
-              className="px-3.5 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold hover:bg-emerald-100 cursor-pointer"
+              className="px-3 py-2 rounded-xl border border-primary-subtle bg-primary-light text-primary text-xs font-bold hover:bg-primary/20 cursor-pointer"
             >
               الأسبوع الحالي
             </button>
             <button
               onClick={handleNextWeek}
-              className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-sm cursor-pointer"
+              className="px-2.5 py-2 rounded-xl border border-surface-border hover:bg-beige text-text-main font-bold text-xs sm:text-sm cursor-pointer"
               title="الأسبوع التالي"
             >
-              الأسبوع التالي &larr;
+              <span className="inline-flex items-center gap-1">
+                <span>التالي</span>
+                <LuChevronLeft className="w-4 h-4" />
+              </span>
             </button>
           </div>
 
           {/* Week Date Display */}
-          <div className="text-xs font-bold text-slate-600 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
-            من: <span className="text-emerald-800">{startDate}</span> إلى:{" "}
-            <span className="text-emerald-800">{endDate}</span>
+          <div className="text-xs font-bold text-text-main bg-beige px-3.5 py-2.5 rounded-xl border border-surface-border text-center">
+            من: <span className="text-primary font-bold">{startDate}</span> إلى:{" "}
+            <span className="text-primary font-bold">{endDate}</span>
           </div>
         </div>
 
         {/* Homework Table */}
         {loading ? (
-          <div className="p-12 text-center text-slate-400">جاري تحميل سجل الواجبات...</div>
+          <div className="p-12 text-center text-text-muted">جاري تحميل سجل الواجبات...</div>
         ) : students.length === 0 ? (
-          <div className="p-16 text-center bg-white rounded-3xl border border-dashed border-slate-300 space-y-2">
-            <div className="text-4xl">✍️</div>
-            <h3 className="text-base font-bold text-slate-700">لا توجد طالبات في هذه الحلقة</h3>
-            <p className="text-xs text-slate-500">قم بإضافة طالبات للحلقة أولاً لمتابعة واجباتهن.</p>
+          <div className="p-12 sm:p-16 text-center bg-surface rounded-2xl sm:rounded-3xl border border-dashed border-surface-border space-y-2">
+            <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center text-primary mx-auto">
+              <LuPenTool className="w-8 h-8" />
+            </div>
+            <h3 className="text-base font-bold text-text-main">لا توجد طالبات في هذه الحلقة</h3>
+            <p className="text-xs text-text-muted">قم بإضافة طالبات للحلقة أولاً لمتابعة واجباتهن.</p>
           </div>
         ) : (
-          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+          <div className="bg-surface rounded-2xl sm:rounded-3xl border border-surface-border overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-center text-sm">
-                <thead className="bg-slate-50 text-slate-600 text-xs font-bold border-b border-slate-200">
+              <table className="w-full text-center text-xs sm:text-sm min-w-[620px]">
+                <thead className="bg-beige/70 text-text-muted text-xs font-bold border-b border-surface-border">
                   <tr>
-                    <th className="py-4 px-6 text-right w-56">اسم الطالبة</th>
+                    <th className="py-3 sm:py-4 px-4 sm:px-6 text-right w-48 sm:w-56 sticky right-0 bg-beige/95 backdrop-blur-xs z-10 border-l border-surface-border">
+                      اسم الطالبة
+                    </th>
                     {weekDaysDates.map((day) => (
-                      <th key={day.key} className="py-4 px-3">
+                      <th key={day.key} className="py-3 sm:py-4 px-2 sm:px-3">
                         <div>{day.name}</div>
-                        <div className="text-[10px] text-slate-400 font-normal">{day.displayDate}</div>
+                        <div className="text-[10px] text-text-muted font-normal">{day.displayDate}</div>
                       </th>
                     ))}
-                    <th className="py-4 px-4 w-32">الإنجاز الأسبوعي</th>
+                    <th className="py-3 sm:py-4 px-3 sm:px-4 w-28 sm:w-32">الإنجاز الأسبوعي</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                <tbody className="divide-y divide-surface-border font-medium text-text-main">
                   {students.map((student) => {
-                    // Count completed days for this student
                     let completedDaysCount = 0;
                     weekDaysDates.forEach((day) => {
                       if (recordsMap.get(`${student._id}_${day.dateStr}`)) {
@@ -255,22 +282,22 @@ export default function HomeworkPage() {
                     const percentage = Math.round((completedDaysCount / 6) * 100);
 
                     return (
-                      <tr key={student._id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-4 px-6 text-right font-bold text-slate-800">
+                      <tr key={student._id} className="hover:bg-beige/40 transition-colors">
+                        <td className="py-3 sm:py-4 px-4 sm:px-6 text-right font-bold text-text-main sticky right-0 bg-surface z-10 border-l border-surface-border shadow-xs">
                           {student.name}
                         </td>
 
                         {weekDaysDates.map((day) => {
                           const isDone = Boolean(recordsMap.get(`${student._id}_${day.dateStr}`));
                           return (
-                            <td key={day.key} className="py-4 px-3">
+                            <td key={day.key} className="py-3 sm:py-4 px-2 sm:px-3">
                               <button
                                 type="button"
                                 onClick={() => handleToggle(student._id, day.dateStr)}
-                                className={`w-9 h-9 rounded-xl font-bold transition-all inline-flex items-center justify-center cursor-pointer ${
+                                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl font-bold transition-all inline-flex items-center justify-center cursor-pointer ${
                                   isDone
-                                    ? "bg-emerald-600 text-white shadow-xs scale-105"
-                                    : "bg-slate-100 text-slate-300 hover:bg-slate-200 border border-slate-200"
+                                    ? "bg-primary text-white shadow-xs scale-105"
+                                    : "bg-beige text-text-muted hover:bg-primary-light border border-surface-border"
                                 }`}
                                 title={`${day.name}: ${isDone ? "تم الواجب" : "لم يُنجز بعد"}`}
                               >
@@ -280,14 +307,14 @@ export default function HomeworkPage() {
                           );
                         })}
 
-                        <td className="py-4 px-4">
+                        <td className="py-3 sm:py-4 px-3 sm:px-4">
                           <div className="flex flex-col items-center gap-1">
-                            <span className="font-bold text-xs text-emerald-800">
-                              {completedDaysCount} / 6 أيام
+                            <span className="font-bold text-[11px] sm:text-xs text-primary">
+                              {completedDaysCount} / 6
                             </span>
-                            <div className="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div className="w-16 sm:w-20 bg-beige rounded-full h-1.5 overflow-hidden border border-surface-border">
                               <div
-                                className="bg-emerald-600 h-1.5 rounded-full transition-all"
+                                className="bg-primary h-1.5 rounded-full transition-all"
                                 style={{ width: `${percentage}%` }}
                               />
                             </div>
@@ -357,6 +384,16 @@ export default function HomeworkPage() {
           <div>نظام الإتقان لإدارة الحلقات</div>
         </div>
       </div>
+
+      {/* Homework WhatsApp Report Modal */}
+      <HomeworkReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        circle={currentCircle}
+        currentSaturday={currentSaturday}
+        studentsList={students}
+        recordsMap={recordsMap}
+      />
     </div>
   );
 }

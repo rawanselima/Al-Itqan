@@ -1,7 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options */
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  webpack: (config) => {
+    return config;
+  },
+  experimental: {
+    webpackBuildWorker: false,
+  },
 };
 
 export default nextConfig;

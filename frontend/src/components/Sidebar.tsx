@@ -1,108 +1,175 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  LuBookOpen,
+  LuLayoutDashboard,
+  LuLayers,
+  LuUsers,
+  LuClipboardCheck,
+  LuBookOpenCheck,
+  LuFileSpreadsheet,
+  LuMenu,
+  LuX,
+  LuSettings,
+} from "react-icons/lu";
+import { api, Circle } from "@/lib/api";
+import { SettingsModal } from "@/components/SettingsModal";
 
 const navItems = [
   {
     name: "لوحة التحكم",
     href: "/",
-    icon: (
-      <svg className="w-5 h-5 min-w-5 shrink-0" width={20} height={20} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-      </svg>
-    ),
+    icon: <LuLayoutDashboard className="w-5 h-5 min-w-5 shrink-0" />,
   },
   {
     name: "الحلقات",
     href: "/circles",
-    icon: (
-      <svg className="w-5 h-5 min-w-5 shrink-0" width={20} height={20} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-      </svg>
-    ),
+    icon: <LuLayers className="w-5 h-5 min-w-5 shrink-0" />,
   },
   {
     name: "الطالبات",
     href: "/students",
-    icon: (
-      <svg className="w-5 h-5 min-w-5 shrink-0" width={20} height={20} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-    ),
+    icon: <LuUsers className="w-5 h-5 min-w-5 shrink-0" />,
   },
   {
     name: "الـحضور والتسميع",
     href: "/attendance",
-    icon: (
-      <svg className="w-5 h-5 min-w-5 shrink-0" width={20} height={20} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-      </svg>
-    ),
+    icon: <LuClipboardCheck className="w-5 h-5 min-w-5 shrink-0" />,
   },
   {
     name: "متابعة الواجبات",
     href: "/homework",
-    icon: (
-      <svg className="w-5 h-5 min-w-5 shrink-0" width={20} height={20} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-      </svg>
-    ),
+    icon: <LuBookOpenCheck className="w-5 h-5 min-w-5 shrink-0" />,
   },
   {
     name: "التقارير الشهرية",
     href: "/reports",
-    icon: (
-      <svg className="w-5 h-5 min-w-5 shrink-0" width={20} height={20} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    ),
+    icon: <LuFileSpreadsheet className="w-5 h-5 min-w-5 shrink-0" />,
   },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [circles, setCircles] = useState<Circle[]>([]);
+
+  useEffect(() => {
+    api.getCircles().then(setCircles).catch(() => {});
+  }, []);
+
+  // Close drawer automatically on route navigation
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
 
   return (
-    <aside className="no-print w-64 min-w-[16rem] bg-emerald-900 text-white min-h-screen flex flex-col shadow-xl z-20 shrink-0">
-      {/* Brand Header */}
-      <div className="p-6 border-b border-emerald-800/80 flex items-center gap-3">
-        <div className="w-10 h-10 min-w-10 rounded-xl bg-emerald-700/80 flex items-center justify-center font-bold text-xl text-emerald-200 shadow-inner shrink-0">
-          📖
+    <>
+      {/* 1. Mobile Top Header Bar (Visible on mobile/tablet, hidden on lg screens) */}
+      <header className="no-print lg:hidden sticky top-0 z-30 bg-primary text-white px-4 py-3 shadow-md flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center font-bold text-base text-white">
+            <LuBookOpen className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h1 className="font-extrabold text-base leading-tight">الإتقان</h1>
+            <p className="text-[10px] text-white/70">نظام إدارة الحلقات</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold tracking-wide text-emerald-50">الإتقان</h1>
-          <p className="text-xs text-emerald-300">نظام إدارة الحلقات القرآنية</p>
+
+        {/* Hamburger Menu Toggle Button */}
+        <button
+          suppressHydrationWarning
+          onClick={() => setIsOpen(!isOpen)}
+          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+          aria-label="القائمة الرئيسية"
+        >
+          {isOpen ? <LuX className="w-5 h-5" /> : <LuMenu className="w-5 h-5" />}
+        </button>
+      </header>
+
+      {/* 2. Mobile Backdrop Overlay */}
+      {isOpen && (
+        <div
+          onClick={() => setIsOpen(false)}
+          className="no-print fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden transition-opacity"
+        />
+      )}
+
+      {/* 3. Sidebar Drawer (Slide-over on mobile, static pinned on desktop) */}
+      <aside
+        className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[80vw] bg-primary text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out border-l border-primary-hover lg:static lg:translate-x-0 lg:w-64 lg:min-w-[16rem] lg:shadow-xl shrink-0 ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Brand Header */}
+        <div className="p-5 sm:p-6 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 min-w-10 rounded-xl bg-white/15 flex items-center justify-center text-white shadow-inner shrink-0">
+              <LuBookOpen className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-wide text-white">الإتقان</h1>
+              <p className="text-xs text-white/70">نظام إدارة الحلقات القرآنية</p>
+            </div>
+          </div>
+
+          {/* Close button inside drawer for mobile */}
+          <button
+            suppressHydrationWarning
+            onClick={() => setIsOpen(false)}
+            className="lg:hidden p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 cursor-pointer"
+            aria-label="إغلاق القائمة"
+          >
+            <LuX className="w-5 h-5" />
+          </button>
         </div>
-      </div>
 
-      {/* Navigation Links */}
-      <nav className="flex-1 p-4 space-y-1.5">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                isActive
-                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/20 translate-x-1"
-                  : "text-emerald-100/80 hover:bg-emerald-800/60 hover:text-white"
-              }`}
-            >
-              <span className={isActive ? "text-emerald-200" : "text-emerald-300"}>
-                {item.icon}
-              </span>
-              <span>{item.name}</span>
-            </Link>
-          );
-        })}
-      </nav>
+        {/* Navigation Links */}
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? "bg-primary-hover text-white shadow-md translate-x-1 border-r-4 border-white font-bold"
+                    : "text-white/80 hover:bg-primary-hover/50 hover:text-white"
+                }`}
+              >
+                <span className={isActive ? "text-white" : "text-white/70"}>
+                  {item.icon}
+                </span>
+                <span>{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
-      {/* Footer Info */}
-      <div className="p-4 border-t border-emerald-800/80 text-center">
-        <p className="text-xs text-emerald-400">لوحة المشرف - جاهز للعمل</p>
-      </div>
-    </aside>
+        {/* Footer Info */}
+        <div className="p-4 border-t border-white/10 space-y-2">
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+          >
+            <LuSettings className="w-4 h-4" />
+            <span>الإعدادات والإجازات</span>
+          </button>
+          <p className="text-center text-[11px] text-white/60">لوحة المشرف - أمل طاهر</p>
+        </div>
+      </aside>
+
+      {/* Settings & Holidays Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        circles={circles}
+      />
+    </>
   );
 }

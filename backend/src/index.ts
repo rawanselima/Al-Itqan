@@ -9,6 +9,8 @@ import studentRoutes from './routes/studentRoutes';
 import attendanceRoutes from './routes/attendanceRoutes';
 import homeworkRoutes from './routes/homeworkRoutes';
 import reportRoutes from './routes/reportRoutes';
+import holidayRoutes from './routes/holidayRoutes';
+import settingsRoutes from './routes/settingsRoutes';
 
 // Load .env explicitly from backend folder and fallback to cwd
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -95,6 +97,8 @@ app.use('/api/students', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/homework', homeworkRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/holidays', holidayRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Run app.listen locally only when NOT running inside Vercel Serverless
 if (!process.env.VERCEL) {

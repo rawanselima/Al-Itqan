@@ -1,20 +1,49 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Brand Core Colors */
+  --primary: #184E3D;            /* أخضر الإتقان الرئيسي */
+  --primary-hover: #123e30;      /* درجة أغمق للهوفر */
+  --primary-light: #e8f0ed;      /* درجة فاتحة جداً للخلفيات والبادجات */
+  --primary-subtle: #d2e3dc;     /* درجة حدود الحقول */
+
+  --beige: #F6F5F0;              /* بيج - خلفية المنصة الأساسية */
+  --surface: #FFFFFF;            /* أبيض - خلفية الكروت والجداول */
+  --surface-border: #E5E3D8;     /* حدود ناعمة متناسقة مع البيج */
+
+  --text-main: #182B23;          /* نص رئيسي غامق مريح للعين */
+  --text-muted: #64756D;         /* نصوص فرعية توضيحية */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-light: var(--primary-light);
+  --color-primary-subtle: var(--primary-subtle);
+
+  --color-beige: var(--beige);
+  --color-surface: var(--surface);
+  --color-surface-border: var(--surface-border);
+
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+
+  --font-sans: var(--font-baloo), system-ui, -apple-system, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--beige);
+  color: var(--text-main);
+  font-family: var(--font-baloo), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   direction: rtl;
+}
+
+/* Ensure all form controls and buttons strictly inherit Baloo Bhaijaan 2 */
+input,
+button,
+select,
+textarea {
+  font-family: inherit;
 }
 
 /* Print Utilities */
@@ -22,6 +51,7 @@ body {
   body {
     background: #ffffff !important;
     color: #000000 !important;
+    font-family: var(--font-baloo), system-ui, -apple-system, sans-serif !important;
   }
 
   .no-print {
