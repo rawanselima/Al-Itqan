@@ -191,34 +191,54 @@ router.get('/monthly', async (req: Request, res: Response) => {
       date: { $gte: startMonthStr, $lte: endMonthStr },
     });
 
-    // Divide the month into 4 weeks (7 days each, week 4 absorbs remainder)
+    // تقسيم الشهر إلى أسابيع تقويمية فعلية تبدأ من السبت وتستبعد الجمعة، ومحصورة بدقة داخل الشهر
+    // الأيام التي تقع خارج الشهر (مثل 31 أكتوبر في بداية نوفمبر) لا تظهر نهائياً
+    const rawWeeksMap = new Map<string, Array<{ dateStr: string; dayOfWeek: number }>>();
+    const satKeysOrder: string[] = [];
+
+    let curDate = new Date(Date.UTC(y, m - 1, 1));
+    const endDateObj = new Date(Date.UTC(y, m, 0));
+
+    while (curDate <= endDateObj) {
+      const dayOfWeek = curDate.getUTCDay();
+      // استبعاد الجمعة (5)
+      if (dayOfWeek !== 5) {
+        // حساب السبت الخاص بهذا الأسبوع
+        const diff = dayOfWeek === 6 ? 0 : -(dayOfWeek + 1);
+        const satDate = new Date(Date.UTC(curDate.getUTCFullYear(), curDate.getUTCMonth(), curDate.getUTCDate() + diff));
+        const satKey = satDate.toISOString().slice(0, 10);
+        const dateStr = curDate.toISOString().slice(0, 10);
+
+        if (!rawWeeksMap.has(satKey)) {
+          rawWeeksMap.set(satKey, []);
+          satKeysOrder.push(satKey);
+        }
+        rawWeeksMap.get(satKey)!.push({ dateStr, dayOfWeek });
+      }
+      curDate = new Date(Date.UTC(curDate.getUTCFullYear(), curDate.getUTCMonth(), curDate.getUTCDate() + 1));
+    }
+
     const weeks: Array<{
       weekNumber: number;
       name: string;
       startDate: string;
       endDate: string;
+      days: string[];
     }> = [];
 
-    let currentStart = 1;
-    const totalDays = lastDay.getDate();
-
-    for (let w = 1; w <= 4; w++) {
-      const startD = new Date(y, m - 1, currentStart);
-      let endDayNum = currentStart + 6;
-      if (w === 4 || endDayNum > totalDays) {
-        endDayNum = totalDays;
+    let wCounter = 0;
+    for (const satKey of satKeysOrder) {
+      const daysInWeek = rawWeeksMap.get(satKey) || [];
+      if (daysInWeek.length > 0) {
+        wCounter++;
+        weeks.push({
+          weekNumber: wCounter,
+          name: `الأسبوع ${wCounter === 1 ? 'الأول' : wCounter === 2 ? 'الثاني' : wCounter === 3 ? 'الثالث' : wCounter === 4 ? 'الرابع' : wCounter === 5 ? 'الخامس' : 'السادس'}`,
+          startDate: daysInWeek[0].dateStr,
+          endDate: daysInWeek[daysInWeek.length - 1].dateStr,
+          days: daysInWeek.map((d) => d.dateStr),
+        });
       }
-      const endD = new Date(y, m - 1, endDayNum);
-
-      weeks.push({
-        weekNumber: w,
-        name: `الأسبوع ${w === 1 ? 'الأول' : w === 2 ? 'الثاني' : w === 3 ? 'الثالث' : 'الرابع'}`,
-        startDate: formatDate(startD),
-        endDate: formatDate(endD),
-      });
-
-      currentStart = endDayNum + 1;
-      if (currentStart > totalDays) break;
     }
 
     const todayStr = formatDate(new Date());
@@ -267,21 +287,17 @@ router.get('/monthly', async (req: Request, res: Response) => {
           }
         });
 
-        // Homework days in this week (excluding Fridays)
+        // أيام الواجب المحصورة بدقة داخل هذا الشهر (باستثناء الجمعة وأيام الشهور الأخرى)
         const weekDays: Array<{ date: string; completed: boolean | null }> = [];
-        const startD = new Date(week.startDate + 'T12:00:00');
-        const endD = new Date(week.endDate + 'T12:00:00');
-
-        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
-          if (d.getDay() === 5) continue; // Skip Friday
-          const dateStr = formatDate(d);
+        for (const dateStr of week.days) {
           if (dateStr > todayStr) {
             weekDays.push({ date: dateStr, completed: null });
           } else {
             const hw = homeworkRecords.find(
               (h) => String(h.studentId) === String(st._id) && h.date === dateStr
             );
-            weekDays.push({ date: dateStr, completed: hw ? Boolean(hw.completed) : false });
+            const isCompleted = hw ? (hw.status === 'done' || (hw as any).completed === true) : false;
+            weekDays.push({ date: dateStr, completed: isCompleted });
           }
         }
 
@@ -312,7 +328,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
             String(hw.studentId) === String(st._id) &&
             hw.date >= week.startDate &&
             hw.date <= week.endDate &&
-            hw.completed
+            (hw.status === 'done' || (hw as any).completed === true)
         );
         const weekHomeworkDays = weekHwRecords.length;
 
