@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import HomeworkRecord from '../models/HomeworkRecord';
 import Student from '../models/Student';
+import Holiday from '../models/Holiday';
 
 const router = Router();
 
@@ -21,9 +22,23 @@ router.get('/', async (req: Request, res: Response) => {
       date: { $gte: String(startDate), $lte: String(endDate) },
     });
 
+    // جلب الإجازات الرسمية التي تغطي أي يوم في هذا النطاق
+    const holidays = await Holiday.find({
+      $or: [{ circleId: null }, { circleId }],
+      from: { $lte: String(endDate) },
+      to: { $gte: String(startDate) },
+    }).lean();
+
     res.json({
       students,
       records,
+      holidays: holidays.map((h: any) => ({
+        _id: String(h._id),
+        circleId: h.circleId ? String(h.circleId) : null,
+        from: h.from,
+        to: h.to,
+        reason: h.reason || '',
+      })),
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

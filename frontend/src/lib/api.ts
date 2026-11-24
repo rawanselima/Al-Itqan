@@ -110,6 +110,8 @@ export const api = {
       date: string;
       isNew: boolean;
       isHoliday?: boolean;
+      isOfficialHoliday?: boolean;
+      holidayReason?: string;
       records: Array<{
         studentId: string;
         studentName: string;
@@ -138,6 +140,13 @@ export const api = {
         studentId: string;
         date: string;
         completed: boolean;
+      }>;
+      holidays?: Array<{
+        _id: string;
+        circleId: string | null;
+        from: string;
+        to: string;
+        reason?: string;
       }>;
     }>(`/homework?circleId=${circleId}&startDate=${startDate}&endDate=${endDate}`),
 

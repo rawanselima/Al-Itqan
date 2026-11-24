@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Holiday from '../models/Holiday';
+import AttendanceSession from '../models/AttendanceSession';
 
 const router = Router();
 
@@ -50,6 +51,16 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     const saved = await newHoliday.save();
+
+    // تحديث الجلسات المسجلة في نفس الفترة الزمنية لتصبح إجازة تلقائياً
+    const sessionFilter: any = {
+      date: { $gte: from, $lte: to },
+    };
+    if (circleId) {
+      sessionFilter.circleId = circleId;
+    }
+    await AttendanceSession.updateMany(sessionFilter, { $set: { isHoliday: true } });
+
     const populated = await Holiday.findById(saved._id).populate('circleId', 'name');
     res.status(201).json(populated);
   } catch (error: any) {
@@ -60,10 +71,33 @@ router.post('/', async (req: Request, res: Response) => {
 // DELETE holiday
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const deleted = await Holiday.findByIdAndDelete(req.params.id);
-    if (!deleted) {
+    const holiday = await Holiday.findById(req.params.id);
+    if (!holiday) {
       return res.status(404).json({ error: 'الإجازة غير موجودة' });
     }
+
+    await Holiday.findByIdAndDelete(req.params.id);
+
+    // إعادة فحص الجلسات في نطاق الإجازة المحذوفة لإلغاء الإجازة إذا لم تعد مشمولة بأي عطلة أخرى
+    const sessionFilter: any = {
+      date: { $gte: holiday.from, $lte: holiday.to },
+    };
+    if (holiday.circleId) {
+      sessionFilter.circleId = holiday.circleId;
+    }
+    const affectedSessions = await AttendanceSession.find(sessionFilter);
+    for (const sess of affectedSessions) {
+      const remainingHoliday = await Holiday.findOne({
+        $or: [{ circleId: null }, { circleId: sess.circleId }],
+        from: { $lte: sess.date },
+        to: { $gte: sess.date },
+      });
+      if (!remainingHoliday) {
+        sess.isHoliday = false;
+        await sess.save();
+      }
+    }
+
     res.json({ message: 'تم حذف الإجازة بنجاح' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

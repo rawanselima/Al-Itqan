@@ -117,6 +117,7 @@ export default function HomeworkPage() {
 
   const [students, setStudents] = useState<any[]>([]);
   const [recordsMap, setRecordsMap] = useState<Map<string, boolean>>(new Map());
+  const [holidays, setHolidays] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
@@ -159,12 +160,24 @@ export default function HomeworkPage() {
   const endDate = currentWeek?.endDate || "";
   const weekDays = currentWeek?.days || [];
 
+  // فحص ما إذا كان يوم محدد عطلة رسمية للحلقة الحالية
+  const getDayHoliday = (dateStr: string) => {
+    return holidays.find((h) => {
+      const circleMatches =
+        !h.circleId ||
+        h.circleId === selectedCircleId ||
+        (typeof h.circleId === "object" && h.circleId?._id === selectedCircleId);
+      return circleMatches && dateStr >= h.from && dateStr <= h.to;
+    });
+  };
+
   const loadHomework = async () => {
     if (!selectedCircleId || !startDate || !endDate) return;
     try {
       setLoading(true);
       const res = await api.getHomework(selectedCircleId, startDate, endDate);
       setStudents(res.students || []);
+      setHolidays(res.holidays || []);
 
       const map = new Map<string, boolean>();
       res.records.forEach((r: any) => {
@@ -414,14 +427,37 @@ export default function HomeworkPage() {
                     <th className="py-3 sm:py-4 px-4 sm:px-6 text-right w-44 sticky right-0 bg-beige/90 z-20">
                       اسم الطالبة
                     </th>
-                    {weekDays.map((day) => (
-                      <th key={day.dateStr} className="py-3 sm:py-4 px-2 sm:px-3">
-                        <div className="font-bold text-text-main">{day.name}</div>
-                        <div className="text-[10px] text-text-muted font-normal mt-0.5 font-mono">
-                          {day.displayDate}
-                        </div>
-                      </th>
-                    ))}
+                    {weekDays.map((day) => {
+                      const hol = getDayHoliday(day.dateStr);
+                      return (
+                        <th
+                          key={day.dateStr}
+                          className={`py-3 sm:py-4 px-2 sm:px-3 transition-colors ${
+                            hol ? "bg-amber-100/70 text-amber-900 border-b-2 border-amber-400" : ""
+                          }`}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="font-bold text-text-main">{day.name}</span>
+                            {hol && (
+                              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-800 shadow-2xs">
+                                إجازة
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-text-muted font-normal mt-0.5 font-mono">
+                            {day.displayDate}
+                          </div>
+                          {hol?.reason && (
+                            <div
+                              className="text-[9px] text-amber-800 font-medium truncate max-w-[80px] mx-auto mt-0.5"
+                              title={hol.reason}
+                            >
+                              {hol.reason}
+                            </div>
+                          )}
+                        </th>
+                      );
+                    })}
                     <th className="py-3 sm:py-4 px-3 sm:px-4 w-32">
                       الإنجاز الأسبوعي
                     </th>
@@ -429,15 +465,16 @@ export default function HomeworkPage() {
                 </thead>
                 <tbody className="divide-y divide-surface-border">
                   {students.map((student) => {
-                    const totalDaysInWeek = weekDays.length;
-                    const completedDaysCount = weekDays.filter((d) =>
+                    const activeDays = weekDays.filter((d) => !getDayHoliday(d.dateStr));
+                    const totalDaysInWeek = activeDays.length;
+                    const completedDaysCount = activeDays.filter((d) =>
                       Boolean(recordsMap.get(`${student._id}_${d.dateStr}`))
                     ).length;
 
                     const percentage =
                       totalDaysInWeek > 0
                         ? Math.round((completedDaysCount / totalDaysInWeek) * 100)
-                        : 0;
+                        : 100;
 
                     return (
                       <tr key={student._id} className="hover:bg-beige/40 transition-colors">
@@ -446,7 +483,22 @@ export default function HomeworkPage() {
                         </td>
 
                         {weekDays.map((day) => {
+                          const hol = getDayHoliday(day.dateStr);
                           const isDone = Boolean(recordsMap.get(`${student._id}_${day.dateStr}`));
+
+                          if (hol) {
+                            return (
+                              <td key={day.dateStr} className="py-3 sm:py-4 px-2 sm:px-3 bg-amber-50/40">
+                                <span
+                                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl font-bold inline-flex items-center justify-center bg-amber-100/70 text-amber-700 text-xs select-none border border-amber-200/60"
+                                  title={`إجازة رسمية: ${hol.reason || "عطلة"} (رمز التقرير: ➖)`}
+                                >
+                                  ➖
+                                </span>
+                              </td>
+                            );
+                          }
+
                           return (
                             <td key={day.dateStr} className="py-3 sm:py-4 px-2 sm:px-3">
                               <button

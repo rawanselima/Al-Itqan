@@ -52,6 +52,13 @@ textarea {
     background: #ffffff !important;
     color: #000000 !important;
     font-family: var(--font-baloo), system-ui, -apple-system, sans-serif !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  main {
+    overflow: visible !important;
+    height: auto !important;
   }
 
   .no-print {

@@ -23,12 +23,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ar" dir="rtl" className={`h-full ${baloo.variable}`} suppressHydrationWarning>
-      <body className={`min-h-screen flex flex-col lg:flex-row bg-beige text-text-main antialiased ${baloo.className}`} suppressHydrationWarning>
+      <body className={`min-h-screen lg:h-screen lg:overflow-hidden flex flex-col lg:flex-row bg-beige text-text-main antialiased ${baloo.className}`} suppressHydrationWarning>
         {/* Responsive Navigation / Sidebar */}
         <Sidebar />
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto font-sans bg-beige w-full">
+        <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto font-sans bg-beige w-full">
           <Providers>{children}</Providers>
         </main>
       </body>

@@ -99,9 +99,9 @@ export default function Sidebar() {
         />
       )}
 
-      {/* 3. Sidebar Drawer (Slide-over on mobile, static pinned on desktop) */}
+      {/* 3. Sidebar Drawer (Slide-over on mobile, fixed/sticky pinned on desktop - never stretches) */}
       <aside
-        className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[80vw] bg-primary text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out border-l border-primary-hover lg:static lg:translate-x-0 lg:w-64 lg:min-w-[16rem] lg:shadow-xl shrink-0 ${
+        className={`no-print fixed inset-y-0 right-0 z-50 w-72 max-w-[80vw] bg-primary text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out border-l border-primary-hover lg:sticky lg:top-0 lg:h-screen lg:max-h-screen lg:self-start lg:translate-x-0 lg:w-64 lg:min-w-[16rem] lg:shadow-xl shrink-0 ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >

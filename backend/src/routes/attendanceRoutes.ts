@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import AttendanceSession from '../models/AttendanceSession';
 import Student from '../models/Student';
 import Circle from '../models/Circle';
+import Holiday from '../models/Holiday';
 
 const router = Router();
 
@@ -26,6 +27,15 @@ router.get('/', async (req: Request, res: Response) => {
     // Look for existing session
     const session = await AttendanceSession.findOne({ circleId, date: String(date) });
 
+    // فحص ما إذا كان هذا اليوم يقع ضمن أي إجازة رسمية مسجلة في الإعدادات
+    const matchingHoliday = await Holiday.findOne({
+      $or: [{ circleId: null }, { circleId }],
+      from: { $lte: String(date) },
+      to: { $gte: String(date) },
+    });
+    const isOfficialHoliday = Boolean(matchingHoliday);
+    const holidayReason = matchingHoliday?.reason || (isOfficialHoliday ? 'إجازة رسمية' : '');
+
     if (!session) {
       // Build draft records
       const draftRecords = students.map((st) => ({
@@ -36,13 +46,16 @@ router.get('/', async (req: Request, res: Response) => {
         hasRecited: false,
         order: null,
         notes: '',
+        departureTime: null,
       }));
 
       return res.json({
         circleId,
         date,
         isNew: true,
-        isHoliday: false,
+        isHoliday: isOfficialHoliday,
+        isOfficialHoliday,
+        holidayReason,
         records: draftRecords,
       });
     }
@@ -92,7 +105,9 @@ router.get('/', async (req: Request, res: Response) => {
       circleId,
       date,
       isNew: false,
-      isHoliday: Boolean(session.isHoliday),
+      isHoliday: Boolean(session.isHoliday || isOfficialHoliday),
+      isOfficialHoliday,
+      holidayReason,
       records: mergedRecords,
     });
   } catch (error: any) {

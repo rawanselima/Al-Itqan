@@ -74,6 +74,7 @@ export default function AttendancePage() {
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [isHoliday, setIsHoliday] = useState(false);
+  const [holidayReason, setHolidayReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -131,6 +132,7 @@ export default function AttendancePage() {
         const loadedHoliday = Boolean(res.isHoliday);
         setRecords(loadedRecords);
         setIsHoliday(loadedHoliday);
+        setHolidayReason((res as any).holidayReason || "");
         lastSavedSnapshotRef.current = JSON.stringify({
           records: loadedRecords,
           isHoliday: loadedHoliday,
@@ -953,9 +955,18 @@ ${absentLines.join("\n")}
 
           {/* Holiday Notice Banner */}
           {isHoliday && (
-            <div className="p-3.5 bg-[#F4EEDD] text-[#7B6541] border-b border-[#E6E9E2] text-xs font-bold flex items-center gap-2">
-              <LuTriangleAlert className="w-4 h-4 text-[#7B6541] shrink-0" />
-              <span>هذا اليوم إجازة؛ أُوقف التسجيل واستُبعد اليوم من التقارير الإحصائية.</span>
+            <div className="p-3.5 bg-[#F4EEDD] text-[#7B6541] border-b border-[#E6E9E2] text-xs font-bold flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <LuTriangleAlert className="w-4 h-4 text-[#7B6541] shrink-0" />
+                <span>
+                  هذا اليوم إجازة / عطلة رسمية للحلقة{holidayReason ? ` (${holidayReason})` : ""}؛ أُوقف التسجيل واستُبعد اليوم من التقارير الإحصائية.
+                </span>
+              </div>
+              {holidayReason && (
+                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#e2d5bd] text-[#5e4b2d] font-bold shrink-0">
+                  {holidayReason}
+                </span>
+              )}
             </div>
           )}
 
