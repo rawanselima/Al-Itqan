@@ -185,7 +185,7 @@ export default function AttendancePage() {
     return { total, present, heard, waiting, absent, excused };
   }, [records]);
 
-  // Handle status change
+  // Handle status change with automatic shift (ترحيل الأدوار تلقائياً عند تغيير الحالة)
   const handleStatusChange = (
     studentId: string,
     newStatusArabic: "لم يُسجّل" | "حاضرة" | "غائبة" | "معتذرة"
@@ -201,21 +201,32 @@ export default function AttendancePage() {
     const newStatus = statusMap[newStatusArabic] || "unrecorded";
 
     setRecords((prev) => {
-      const currentOrders = prev
-        .filter((r) => r.status === "present" && r.order !== null)
-        .map((r) => r.order as number);
-      const nextOrder = currentOrders.length > 0 ? Math.max(...currentOrders) + 1 : 1;
+      const target = prev.find((r) => r.studentId === studentId);
+      if (!target) return prev;
 
+      const wasPresent = target.status === "present";
+      const oldOrder = target.order;
+
+      // 1. إذا تحولت الطالبة إلى "حاضرة"
+      if (newStatus === "present") {
+        if (wasPresent && target.order !== null) return prev; // حاضرة ولديها دور بالفعل
+
+        const currentOrders = prev
+          .filter((r) => r.status === "present" && r.order !== null && r.studentId !== studentId)
+          .map((r) => r.order as number);
+        const nextOrder = currentOrders.length > 0 ? Math.max(...currentOrders) + 1 : 1;
+
+        return prev.map((r) =>
+          r.studentId === studentId
+            ? { ...r, status: "present", order: nextOrder }
+            : r
+        );
+      }
+
+      // 2. إذا تحولت الطالبة إلى (غائبة، معتذرة، أو لم يُسجّل)
+      // تصفير دورها وترحيل أدوار باقي الحاضرات تلقائياً لسد الفراغ
       return prev.map((r) => {
-        if (r.studentId !== studentId) return r;
-
-        if (newStatus === "present") {
-          return {
-            ...r,
-            status: "present",
-            order: r.order || nextOrder,
-          };
-        } else {
+        if (r.studentId === studentId) {
           return {
             ...r,
             status: newStatus,
@@ -225,6 +236,83 @@ export default function AttendancePage() {
             departureTime: null,
           };
         }
+
+        // ترحيل (Shift Down -1) لكل طالبة حاضرة كان دورها بعد دور هذه الطالبة
+        if (
+          wasPresent &&
+          oldOrder !== null &&
+          r.status === "present" &&
+          r.order !== null &&
+          r.order > oldOrder
+        ) {
+          return {
+            ...r,
+            order: r.order - 1,
+          };
+        }
+
+        return r;
+      });
+    });
+  };
+
+  // تعديل رقم الدور يدوياً وترحيل باقي الأدوار تلقائياً
+  const handleReorderStudent = (studentId: string, targetOrder: number) => {
+    if (isHoliday || targetOrder < 1) return;
+
+    setRecords((prev) => {
+      const student = prev.find((r) => r.studentId === studentId);
+      if (!student) return prev;
+
+      const currentOrder = student.order;
+      const otherPresent = prev.filter(
+        (r) => r.status === "present" && r.studentId !== studentId && r.order !== null
+      );
+
+      // الحد الأقصى لرقم الدور هو عدد الطالبات الحاضرات
+      const maxPossibleOrder = otherPresent.length + 1;
+      const finalTargetOrder = Math.min(Math.max(1, targetOrder), maxPossibleOrder);
+
+      if (currentOrder === finalTargetOrder) return prev;
+
+      return prev.map((r) => {
+        if (r.studentId === studentId) {
+          return {
+            ...r,
+            status: "present",
+            order: finalTargetOrder,
+          };
+        }
+
+        if (r.status !== "present" || r.order === null) {
+          return r;
+        }
+
+        const ord = r.order;
+
+        if (currentOrder === null) {
+          // تسكين طالبة لم يكن لها رقم دور من قبل
+          if (ord >= finalTargetOrder) {
+            return { ...r, order: ord + 1 };
+          }
+          return r;
+        }
+
+        // نقل إلى رقم دور أصغر (مثال من 4 إلى 1) -> ترحيل الأدوار الوسطى للأعلى (+1)
+        if (finalTargetOrder < currentOrder) {
+          if (ord >= finalTargetOrder && ord < currentOrder) {
+            return { ...r, order: ord + 1 };
+          }
+        }
+
+        // نقل إلى رقم دور أكبر (مثال من 1 إلى 4) -> ترحيل الأدوار الوسطى للأسفل (-1)
+        if (finalTargetOrder > currentOrder) {
+          if (ord > currentOrder && ord <= finalTargetOrder) {
+            return { ...r, order: ord - 1 };
+          }
+        }
+
+        return r;
       });
     });
   };
@@ -1021,7 +1109,7 @@ ${absentLines.join("\n")}
                   <tr className="bg-[#F8F9F5] text-[#7C857D] text-xs font-bold border-b border-[#E6E9E2]">
                     <th className="py-3 px-5 w-2/6">الطالبة</th>
                     <th className="py-3 px-4 text-center w-1/6">الحضور</th>
-                    <th className="py-3 px-4 text-center w-14">الدور</th>
+                    <th className="py-3 px-4 text-center w-20 sm:w-24">الدور</th>
                     <th className="py-3 px-4 text-center w-1/6">التسميع</th>
                   </tr>
                 </thead>
@@ -1083,14 +1171,69 @@ ${absentLines.join("\n")}
                           />
                         </td>
 
-                        {/* 3. الدور */}
-                        <td className="py-3.5 px-4 text-center">
-                          {isPresent && r.order ? (
-                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-[#F0F4EC] text-[#184E3D] font-bold text-xs">
-                              {r.order.toLocaleString("ar-EG")}
-                            </span>
+                        {/* 3. الدور (حقل قابل للتعديل مع ترحيل تلقائي للأدوار) */}
+                        <td className="py-2.5 px-3 text-center">
+                          {isPresent ? (
+                            <div className="inline-flex items-center justify-center">
+                              <input
+                                type="number"
+                                min={1}
+                                max={99}
+                                disabled={isHoliday}
+                                value={r.order ?? ""}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === "") {
+                                    setRecords((prev) =>
+                                      prev.map((rec) =>
+                                        rec.studentId === r.studentId
+                                          ? { ...rec, order: null }
+                                          : rec
+                                      )
+                                    );
+                                  } else {
+                                    const parsed = parseInt(val, 10);
+                                    if (!isNaN(parsed) && parsed > 0) {
+                                      setRecords((prev) =>
+                                        prev.map((rec) =>
+                                          rec.studentId === r.studentId
+                                            ? { ...rec, order: parsed }
+                                            : rec
+                                        )
+                                      );
+                                    }
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  if (isNaN(val) || val < 1) {
+                                    // إذا تم تفريغ الحقل نُسكنها في نهاية أدوار الحاضرات
+                                    const others = records
+                                      .filter(
+                                        (rec) =>
+                                          rec.status === "present" &&
+                                          rec.studentId !== r.studentId &&
+                                          rec.order !== null
+                                      )
+                                      .map((rec) => rec.order as number);
+                                    const nextOrd =
+                                      others.length > 0 ? Math.max(...others) + 1 : 1;
+                                    handleReorderStudent(r.studentId, nextOrd);
+                                  } else {
+                                    handleReorderStudent(r.studentId, val);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                className="w-12 h-8 text-center font-bold text-xs rounded-lg border border-[#d2e3dc] bg-white text-[#184E3D] hover:border-[#184E3D] focus:border-[#184E3D] focus:ring-1 focus:ring-[#184E3D] focus:outline-hidden transition-all shadow-2xs cursor-text"
+                                title="انقر لتعديل رقم الدور (سيتم ترحيل باقي الأدوار تلقائياً)"
+                              />
+                            </div>
                           ) : (
-                            <span className="text-[#7C857D] font-bold select-none">—</span>
+                            <span className="text-[#7C857D] font-bold select-none text-xs">—</span>
                           )}
                         </td>
 

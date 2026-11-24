@@ -141,13 +141,6 @@ export const api = {
         date: string;
         completed: boolean;
       }>;
-      holidays?: Array<{
-        _id: string;
-        circleId: string | null;
-        from: string;
-        to: string;
-        reason?: string;
-      }>;
     }>(`/homework?circleId=${circleId}&startDate=${startDate}&endDate=${endDate}`),
 
   toggleHomework: (circleId: string, studentId: string, date: string, completed: boolean) =>
