@@ -25,7 +25,7 @@ interface StudentsParams {
 }
 
 export function useStudents(params: StudentsParams = {}) {
-  const { data: students = [], isLoading, error, refetch } = useApiQuery<Student[]>(
+  const { data: students = [], isLoading, isPending, error, refetch } = useApiQuery<Student[]>(
     ["students", params],
     () => api.getStudents(params)
   );
@@ -76,6 +76,7 @@ export function useStudents(params: StudentsParams = {}) {
   return {
     students,
     isLoading,
+    isPending,
     error,
     refetch,
     createStudent: create,

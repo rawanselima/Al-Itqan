@@ -5,7 +5,7 @@ import { api, Circle } from "@/lib/api";
 
 export function useCircles() {
   // Fetch all circles
-  const { data: circles = [], isLoading, error, refetch } = useApiQuery<Circle[]>(
+  const { data: circles = [], isLoading, isPending, error, refetch } = useApiQuery<Circle[]>(
     ["circles"],
     api.getCircles
   );
@@ -33,6 +33,7 @@ export function useCircles() {
   return {
     circles,
     isLoading,
+    isPending,
     error,
     refetch,
     createCircle: create,

@@ -4,7 +4,7 @@ import { useApiQuery, useApiMutation, useCrudMutations } from "./useApi";
 import { api, Settings, Holiday } from "@/lib/api";
 
 export function useSettings() {
-  const { data: settings, isLoading, error, refetch } = useApiQuery<Settings>(
+  const { data: settings, isLoading, isPending, error, refetch } = useApiQuery<Settings>(
     ["settings"],
     api.getSettings
   );
@@ -21,6 +21,7 @@ export function useSettings() {
   return {
     settings,
     isLoading,
+    isPending,
     error,
     refetch,
     updateSettings: updateMutation.mutateAsync,
@@ -31,7 +32,7 @@ export function useSettings() {
 export function useHolidays(circleId?: string) {
   const queryKey = ["holidays", circleId];
 
-  const { data: holidays = [], isLoading, error, refetch } = useApiQuery<Holiday[]>(
+  const { data: holidays = [], isLoading, isPending, error, refetch } = useApiQuery<Holiday[]>(
     queryKey,
     () => api.getHolidays(circleId)
   );
@@ -57,6 +58,7 @@ export function useHolidays(circleId?: string) {
   return {
     holidays,
     isLoading,
+    isPending,
     error,
     refetch,
     createHoliday,

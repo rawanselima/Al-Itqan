@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useWatch, type Control, type UseFormSetValue } from "react-hook-form";
 import { useCircles } from "@/hooks";
-import type { Circle } from "@/lib/api";
+import { getDayName, type Circle } from "@/lib/api";
 import { circleSchema, type CircleFormData } from "@/lib/schemas";
 import {
   Button,
@@ -12,22 +13,114 @@ import {
   LoadingState,
   ConfirmDialog,
 } from "@/components/ui";
-import { LuPlus, LuBookOpen, LuPencil, LuTrash2 } from "react-icons/lu";
+import { LuPlus, LuBookOpen, LuPencil, LuTrash2, LuCheck } from "react-icons/lu";
 
-const DAYS_OF_WEEK = [
-  "السبت",
-  "الأحد",
-  "الإثنين",
-  "الثلاثاء",
-  "الأربعاء",
-  "الخميس",
-  "الجمعة",
+const CIRCLE_DAY_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 6, label: "السبت" },
+  { value: 0, label: "الأحد" },
+  { value: 1, label: "الإثنين" },
+  { value: 2, label: "الثلاثاء" },
+  { value: 3, label: "الأربعاء" },
+  { value: 4, label: "الخميس" },
+  { value: 5, label: "الجمعة" },
 ];
+
+const ARABIC_DAY_TO_NUMBER: Record<string, number> = {
+  "الأحد": 0, "الاحد": 0, "أحد": 0, "احد": 0,
+  "الإثنين": 1, "الاثنين": 1, "إثنين": 1, "اثنين": 1,
+  "الثلاثاء": 2, "الثلاثا": 2, "ثلاثاء": 2,
+  "الأربعاء": 3, "الاربعاء": 3, "أربعاء": 3, "اربعاء": 3,
+  "الخميس": 4, "خميس": 4,
+  "الجمعة": 5, "جمعة": 5, "الجمعه": 5,
+  "السبت": 6, "سبت": 6,
+};
+
+function normalizeDaysToNumbers(days?: Array<string | number>): number[] {
+  if (!Array.isArray(days)) return [];
+  const normalized: number[] = [];
+  for (const d of days) {
+    let num: number | null = null;
+    if (typeof d === "number" && d >= 0 && d <= 6) {
+      num = d;
+    } else if (typeof d === "string") {
+      const trimmed = d.trim();
+      if (trimmed in ARABIC_DAY_TO_NUMBER) {
+        num = ARABIC_DAY_TO_NUMBER[trimmed];
+      } else {
+        const parsed = Number(trimmed);
+        if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 6) {
+          num = parsed;
+        }
+      }
+    }
+    if (num !== null && !normalized.includes(num)) {
+      normalized.push(num);
+    }
+  }
+  return normalized;
+}
+
+function CircleDaysField({
+  control,
+  setValue,
+  error,
+}: {
+  control: Control<CircleFormData>;
+  setValue: UseFormSetValue<CircleFormData>;
+  error?: string;
+}) {
+  const watchedDays = useWatch({ control, name: "days" });
+  const selectedDays = normalizeDaysToNumbers(
+    watchedDays as Array<string | number> | undefined,
+  );
+
+  const toggleDay = (dayValue: number) => {
+    const nextDays = selectedDays.includes(dayValue)
+      ? selectedDays.filter((d) => d !== dayValue)
+      : [...selectedDays, dayValue];
+    setValue("days", nextDays, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="text-xs font-bold text-text-main">
+        أيام الحلقة <span className="text-rose-500">*</span>
+      </label>
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+        {CIRCLE_DAY_OPTIONS.map((day) => {
+          const isSelected = selectedDays.includes(day.value);
+          return (
+            <Button
+              key={day.value}
+              type="button"
+              variant={isSelected ? "primary" : "secondary"}
+              size="xs"
+              aria-pressed={isSelected}
+              className="py-2 px-2 text-xs"
+              iconLeft={isSelected ? <LuCheck className="w-3.5 h-3.5" /> : undefined}
+              onClick={() => toggleDay(day.value)}
+            >
+              {day.label}
+            </Button>
+          );
+        })}
+      </div>
+      {error && (
+        <p className="text-xs text-rose-600 font-bold" role="alert">
+          • {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function CirclesPage() {
   const {
     circles,
-    isLoading,
+    isPending,
     createCircle,
     updateCircle,
     deleteCircle,
@@ -49,7 +142,7 @@ export default function CirclesPage() {
     setEditingCircle({
       name: "",
       teacherName: "",
-      days: ["الإثنين", "الخميس"],
+      days: [1, 4],
       time: "04:00 م",
       notes: "",
     });
@@ -62,7 +155,7 @@ export default function CirclesPage() {
       ...circle,
       name: displayName,
       teacherName: displayName,
-      days: Array.isArray(circle.days) ? circle.days : [],
+      days: normalizeDaysToNumbers(circle.days),
       notes: circle.notes || "",
     });
     setIsModalOpen(true);
@@ -74,6 +167,7 @@ export default function CirclesPage() {
       ...data,
       name: teacherTitle,
       teacherName: teacherTitle,
+      days: normalizeDaysToNumbers(data.days),
     };
     if (editingCircle?._id) {
       await updateCircle({ id: editingCircle._id, data: payload });
@@ -110,7 +204,7 @@ export default function CirclesPage() {
       </div>
 
       {/* Content */}
-      {isLoading ? (
+      {isPending ? (
         <LoadingState text="جاري تحميل الحلقات..." />
       ) : circles.length === 0 ? (
         <div className="p-12 sm:p-16 text-center bg-surface rounded-2xl sm:rounded-3xl border border-dashed border-surface-border space-y-4">
@@ -157,7 +251,7 @@ export default function CirclesPage() {
                 {/* Days Badges */}
                 <div className="space-y-1.5">
                   <span className="text-xs text-text-muted font-medium">
-                    أيام الانعقاد:
+                    أيام الحلقه:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {(circle.days || []).map((day) => (
@@ -165,7 +259,7 @@ export default function CirclesPage() {
                         key={String(day)}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-beige text-text-main border border-surface-border"
                       >
-                        {typeof day === "number" ? DAYS_OF_WEEK[day] : day}
+                        {getDayName(day)}
                       </span>
                     ))}
                   </div>
@@ -239,47 +333,11 @@ export default function CirclesPage() {
               required
             />
 
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-text-main">
-                أيام الحلقه <span className="text-rose-500">*</span>
-              </label>
-              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                {DAYS_OF_WEEK.map((day) => {
-                  const isSelected = form.watch("days")?.includes(day) || false;
-                  return (
-                    <Button
-                      key={day}
-                      type="button"
-                      variant={isSelected ? "primary" : "outline"}
-                      size="xs"
-                      className="py-2 px-1 text-xs"
-                      onClick={() => {
-                        const currentDays =
-                          (form.watch("days") as (string | number)[]) || [];
-                        if (currentDays.includes(day)) {
-                          form.setValue(
-                            "days",
-                            currentDays.filter((d) => d !== day),
-                            { shouldValidate: true },
-                          );
-                        } else {
-                          form.setValue("days", [...currentDays, day], {
-                            shouldValidate: true,
-                          });
-                        }
-                      }}
-                    >
-                      {day}
-                    </Button>
-                  );
-                })}
-              </div>
-              {form.formState.errors.days && (
-                <p className="text-xs text-rose-600 font-bold" role="alert">
-                  • {form.formState.errors.days.message as string}
-                </p>
-              )}
-            </div>
+            <CircleDaysField
+              control={form.control}
+              setValue={form.setValue}
+              error={form.formState.errors.days?.message as string | undefined}
+            />
 
             <InputField
               name="time"

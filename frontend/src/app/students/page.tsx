@@ -35,7 +35,7 @@ interface Student {
 export default function StudentsPage() {
   const {
     circles,
-    isLoading: circlesLoading,
+    isPending: circlesLoading,
   } = useCircles();
 
   const [selectedCircleId, setSelectedCircleId] = useState("");
@@ -52,7 +52,7 @@ export default function StudentsPage() {
 
   const {
     students,
-    isLoading,
+    isPending,
     createStudent,
     updateStudent,
     deleteStudent,
@@ -178,7 +178,7 @@ export default function StudentsPage() {
       </div>
 
       {/* Table of Students */}
-      {isLoading ? (
+      {isPending ? (
         <LoadingState text="جاري تحميل بيانات الطالبات..." />
       ) : students.length === 0 ? (
         <div className="p-12 sm:p-16 text-center bg-surface rounded-2xl sm:rounded-3xl border border-dashed border-surface-border space-y-3">
