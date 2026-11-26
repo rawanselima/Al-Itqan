@@ -1,25 +1,25 @@
 /**
  * buildReport.ts
- * دالة نقية (Pure function) مسؤولة عن حساب وبناء تقرير الحضور والواجبات.
+ * دالة نقية (Pure function) مسؤولة عن حساب وبناء تقرير الحضور والورد.
  * لا تحتوي على أي استعلامات لقاعدة البيانات أو دوال خارجية معتمدة على الـ I/O.
  * تعتمد حصرياً على دوال التاريخ بصيغة UTC لتجنب أي مشاكل مع التوقيت المحلي أو التوقيت الصيفي.
  */
 
 export const SYMBOLS = {
-  done: '✅',
-  notDone: '❗',
-  partial: '☑️',
-  present: '⭐',
-  absent: '🛑',
-  excused: '🤚🏻',
-  holiday: '➖',
-  notRecorded: '▫️',
-  awardHomework: '🏆',
-  awardFull: '🏅',
-  warning: '⚠️',
+  done: "✅",
+  notDone: "❗",
+  partial: "☑️",
+  present: "⭐",
+  absent: "🛑",
+  excused: "🤚🏻",
+  holiday: "➖",
+  notRecorded: "▫️",
+  awardHomework: "🏆",
+  awardFull: "🏅",
+  warning: "⚠️",
 } as const;
 
-export const WEEK_NUMBER_ICONS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'];
+export const WEEK_NUMBER_ICONS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"];
 
 export interface StudentInput {
   _id: string;
@@ -32,7 +32,7 @@ export interface StudentInput {
 
 export interface AttendanceRecordInput {
   studentId: string;
-  status: 'present' | 'absent' | 'excused';
+  status: "present" | "absent" | "excused";
   hasRecited?: boolean;
 }
 
@@ -49,7 +49,7 @@ export interface HomeworkRecordInput {
   studentId: string;
   circleId: string;
   date: string; // YYYY-MM-DD
-  status: 'done' | 'notDone' | 'partial';
+  status: "done" | "notDone" | "partial";
 }
 
 export interface HolidayInput {
@@ -82,7 +82,7 @@ export interface BuildReportInput {
 export interface ReportWarning {
   studentName: string;
   date: string;
-  type: 'homework' | 'attendance';
+  type: "homework" | "attendance";
 }
 
 export interface StudentWeekResult {
@@ -91,7 +91,7 @@ export interface StudentWeekResult {
   startDate: string;
   endDate: string;
   symbols: string;
-  award: '🏆' | '🏅' | null;
+  award: "🏆" | "🏅" | null;
 }
 
 export interface StudentReportResult {
@@ -133,15 +133,26 @@ export function formatUTCDate(date: Date): string {
  * إضافة عدد أيام إلى تاريخ بـ UTC
  */
 export function addUTCDays(date: Date, days: number): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
+  return new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate() + days,
+    ),
+  );
 }
 
 /**
  * فحص ما إذا كان التاريخ يقع ضمن إجازة رسمية خاصة بالحلقة أو عامة
  */
-export function isHolidayDate(dateStr: string, circleId: string, holidays: HolidayInput[] = []): boolean {
+export function isHolidayDate(
+  dateStr: string,
+  circleId: string,
+  holidays: HolidayInput[] = [],
+): boolean {
   return holidays.some((h) => {
-    const isMatchingCircle = !h.circleId || String(h.circleId) === String(circleId);
+    const isMatchingCircle =
+      !h.circleId || String(h.circleId) === String(circleId);
     return isMatchingCircle && dateStr >= h.from && dateStr <= h.to;
   });
 }
@@ -187,13 +198,13 @@ export function buildReport({
   const usedSymbols = new Set<string>();
 
   // 2. خرائط بحث سريعة (Maps) لتجنب الحلقات التكرارية O(n^2)
-  const homeworkMap = new Map<string, 'done' | 'notDone' | 'partial'>();
+  const homeworkMap = new Map<string, "done" | "notDone" | "partial">();
   for (const hw of homework) {
     homeworkMap.set(`${hw.studentId}_${hw.date}`, hw.status);
   }
 
   // 3. بناء التقويم يوم بيوم من from إلى to
-  // وتجميع أيام الواجب (السبت..الخميس، باستثناء الجمعة) في أسابيع
+  // وتجميع أيام الورد(السبت..الخميس، باستثناء الجمعة) في أسابيع
   interface DayInfo {
     dateStr: string;
     dayOfWeek: number;
@@ -225,7 +236,7 @@ export function buildReport({
         weekKeysOrder.push(satKey);
       }
 
-      // الإجازات تطبق على جلسات الحلقة فقط ولا تؤثر على أيام الواجب في التقرير
+      // الإجازات تطبق على جلسات الحلقة فقط ولا تؤثر على أيام الوردفي التقرير
       rawWeeksMap.get(satKey)!.push({
         dateStr,
         dayOfWeek,
@@ -282,11 +293,13 @@ export function buildReport({
   // 6. بناء بيانات كل طالبة
   const studentsResults: StudentReportResult[] = students.map((st) => {
     // تاريخ الانضمام والمغادرة
-    let studentJoinedAt = st.joinedAt || '0000-00-00';
+    let studentJoinedAt = st.joinedAt || "0000-00-00";
     // إذا كان تاريخ الانضمام محدد ولكن توجد سجلات أقدم منه في قاعدة البيانات، نعتمد أقدم سجل
     if (st.joinedAt) {
       for (const session of validSessions) {
-        if (session.records?.some((r) => String(r.studentId) === String(st._id))) {
+        if (
+          session.records?.some((r) => String(r.studentId) === String(st._id))
+        ) {
           if (session.date < studentJoinedAt) {
             studentJoinedAt = session.date;
           }
@@ -294,7 +307,7 @@ export function buildReport({
       }
       for (const [key] of homeworkMap.entries()) {
         if (key.startsWith(`${st._id}_`)) {
-          const d = key.split('_')[1];
+          const d = key.split("_")[1];
           if (d < studentJoinedAt) {
             studentJoinedAt = d;
           }
@@ -311,13 +324,15 @@ export function buildReport({
     // أ) حساب رموز الحضور
     // تظهر فقط جلسات الحلقات الواقعة ضمن الأسابيع التي انتهت بالفعل (week.endDate <= today)
     const completedWeeks = activeWeeks.filter((w) => w.endDate <= today);
-    let attendanceSymbols = '';
+    let attendanceSymbols = "";
 
     for (const session of validSessions) {
       // فحص هل تقع الجلسة في أسبوع منتهٍ بالفعل
       const isSessionInCompletedWeek = completedWeeks.some((w) => {
         // يشمل أيام الأسبوع والجمعة التي تليه (إن عُقدت فيها جلسة)
-        const nextDayAfterEnd = formatUTCDate(addUTCDays(parseUTCDate(w.endDate), 1));
+        const nextDayAfterEnd = formatUTCDate(
+          addUTCDays(parseUTCDate(w.endDate), 1),
+        );
         return session.date >= w.startDate && session.date <= nextDayAfterEnd;
       });
 
@@ -326,20 +341,22 @@ export function buildReport({
         continue;
       }
 
-      const rec = session.records?.find((r) => String(r.studentId) === String(st._id));
+      const rec = session.records?.find(
+        (r) => String(r.studentId) === String(st._id),
+      );
 
       // إذا كانت الجلسة قبل انضمام الطالبة ولا يوجد سجل حضور لها، لا تُحسب
       if (!rec && session.date < studentJoinedAt) continue;
       if (!rec && studentLeftAt && session.date > studentLeftAt) continue;
 
       if (rec) {
-        if (rec.status === 'present') {
+        if (rec.status === "present") {
           attendanceSymbols += SYMBOLS.present;
           usedSymbols.add(SYMBOLS.present);
-        } else if (rec.status === 'absent') {
+        } else if (rec.status === "absent") {
           attendanceSymbols += SYMBOLS.absent;
           usedSymbols.add(SYMBOLS.absent);
-        } else if (rec.status === 'excused') {
+        } else if (rec.status === "excused") {
           attendanceSymbols += SYMBOLS.excused;
           usedSymbols.add(SYMBOLS.excused);
         }
@@ -352,10 +369,10 @@ export function buildReport({
 
     // ب) حساب البطاقة اليومية لكل أسبوع
     const studentWeeks: StudentWeekResult[] = activeWeeks.map((week) => {
-      let weekSymbols = '';
+      let weekSymbols = "";
       let evaluatedDaysCount = 0;
       let allDone = true;
-      let award: '🏆' | '🏅' | null = null;
+      let award: "🏆" | "🏅" | null = null;
 
       // إذا لم ينتهِ الأسبوع بعد (تاريخ نهاية الأسبوع في المستقبل بالنسبة لـ today)
       // يترك سطر الأسبوع فارغاً (يظهر رقم الأسبوع فقط دون رموز أو أوسمة)
@@ -365,7 +382,7 @@ export function buildReport({
           weekIcon: week.icon,
           startDate: week.startDate,
           endDate: week.endDate,
-          symbols: '',
+          symbols: "",
           award: null,
         };
       }
@@ -375,24 +392,28 @@ export function buildReport({
         const hasHomeworkRecord = homeworkMap.has(`${st._id}_${day.dateStr}`);
 
         // فحص انضمام الطالبة: إذا لم يكن هناك سجل مدخل وكان اليوم قبل الانضمام أو بعد المغادرة
-        if (!hasHomeworkRecord && (day.dateStr < studentJoinedAt || (studentLeftAt && day.dateStr > studentLeftAt))) {
+        if (
+          !hasHomeworkRecord &&
+          (day.dateStr < studentJoinedAt ||
+            (studentLeftAt && day.dateStr > studentLeftAt))
+        ) {
           // لم تكن مسجلة في هذا اليوم
           continue;
         }
 
-        // يوم مطلوب فيه واجب في الأسبوع المنتهي (الإجازات لا تؤثر على الواجب ولا تظهر كرمز)
+        // يوم مطلوب فيه واجب في الأسبوع المنتهي (الإجازات لا تؤثر على الوردولا تظهر كرمز)
         evaluatedDaysCount++;
         const status = homeworkMap.get(`${st._id}_${day.dateStr}`);
 
-        if (status === 'done') {
+        if (status === "done") {
           weekSymbols += SYMBOLS.done;
           usedSymbols.add(SYMBOLS.done);
-        } else if (status === 'partial') {
+        } else if (status === "partial") {
           weekSymbols += SYMBOLS.partial;
           usedSymbols.add(SYMBOLS.partial);
           allDone = false;
         } else {
-          // الواجب الذي لم يُعلّم عليه يعتبر لم يتم ونضع !
+          // الوردالذي لم يُعلّم عليه يعتبر لم يتم ونضع !
           weekSymbols += SYMBOLS.notDone;
           usedSymbols.add(SYMBOLS.notDone);
           allDone = false;
@@ -409,15 +430,17 @@ export function buildReport({
             s.date >= week.startDate &&
             s.date <= week.endDate &&
             s.date >= studentJoinedAt &&
-            (!studentLeftAt || s.date <= studentLeftAt)
+            (!studentLeftAt || s.date <= studentLeftAt),
         );
 
         let hasAbsenceOrExcuse = false;
         let presentSessionsCount = 0;
 
         for (const ws of weekSessions) {
-          const rec = ws.records?.find((r) => String(r.studentId) === String(st._id));
-          if (!rec || rec.status !== 'present') {
+          const rec = ws.records?.find(
+            (r) => String(r.studentId) === String(st._id),
+          );
+          if (!rec || rec.status !== "present") {
             hasAbsenceOrExcuse = true;
           } else {
             presentSessionsCount++;
@@ -425,11 +448,15 @@ export function buildReport({
         }
 
         // لو عُقدت جلسات وحضرت الطالبة كل جلسات الأسبوع بنجاح (⭐) -> 🏅 (اتمتت المهام والحضور)
-        if (weekSessions.length > 0 && !hasAbsenceOrExcuse && presentSessionsCount === weekSessions.length) {
+        if (
+          weekSessions.length > 0 &&
+          !hasAbsenceOrExcuse &&
+          presentSessionsCount === weekSessions.length
+        ) {
           award = SYMBOLS.awardFull;
           usedSymbols.add(SYMBOLS.awardFull);
         } else {
-          // أتمت عمل مهام الواجب كاملة (ولكن اعتذرت أو غابت أو لم تعقد جلسات في هذا الأسبوع) -> 🏆 (اتمتت عمل المهام)
+          // أتمت عمل مهام الوردكاملة (ولكن اعتذرت أو غابت أو لم تعقد جلسات في هذا الأسبوع) -> 🏆 (اتمتت عمل المهام)
           award = SYMBOLS.awardHomework;
           usedSymbols.add(SYMBOLS.awardHomework);
         }

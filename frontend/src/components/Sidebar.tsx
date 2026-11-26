@@ -40,7 +40,7 @@ const navItems = [
     icon: <LuClipboardCheck className="w-5 h-5 min-w-5 shrink-0" />,
   },
   {
-    name: "متابعة الواجبات",
+    name: "متابعة الورد",
     href: "/homework",
     icon: <LuBookOpenCheck className="w-5 h-5 min-w-5 shrink-0" />,
   },
@@ -53,24 +53,18 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
+  const [openedOnPath, setOpenedOnPath] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [circles, setCircles] = useState<Circle[]>([]);
+
+  const isOpen = openedOnPath === pathname;
 
   useEffect(() => {
     api
       .getCircles()
-      .then((data) => {
-        const list = Array.isArray(data) ? data : (data as any)?.circles || [];
-        setCircles(list);
-      })
+      .then((data) => setCircles(data))
       .catch(() => {});
   }, []);
-
-  // Close drawer automatically on route navigation
-  useEffect(() => {
-    setIsOpen(false);
-  }, [pathname]);
 
   return (
     <>
@@ -89,18 +83,22 @@ export default function Sidebar() {
         {/* Hamburger Menu Toggle Button */}
         <button
           suppressHydrationWarning
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => setOpenedOnPath(isOpen ? null : pathname)}
           className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           aria-label="القائمة الرئيسية"
         >
-          {isOpen ? <LuX className="w-5 h-5" /> : <LuMenu className="w-5 h-5" />}
+          {isOpen ? (
+            <LuX className="w-5 h-5" />
+          ) : (
+            <LuMenu className="w-5 h-5" />
+          )}
         </button>
       </header>
 
       {/* 2. Mobile Backdrop Overlay */}
       {isOpen && (
         <div
-          onClick={() => setIsOpen(false)}
+          onClick={() => setOpenedOnPath(null)}
           className="no-print fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden transition-opacity"
         />
       )}
@@ -118,15 +116,19 @@ export default function Sidebar() {
               <LuBookOpen className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-wide text-white">الإتقان</h1>
-              <p className="text-xs text-white/70">نظام إدارة الحلقات القرآنية</p>
+              <h1 className="text-xl font-bold tracking-wide text-white">
+                الإتقان
+              </h1>
+              <p className="text-xs text-white/70">
+                نظام إدارة الحلقات القرآنية
+              </p>
             </div>
           </div>
 
           {/* Close button inside drawer for mobile */}
           <button
             suppressHydrationWarning
-            onClick={() => setIsOpen(false)}
+            onClick={() => setOpenedOnPath(null)}
             className="lg:hidden p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 cursor-pointer"
             aria-label="إغلاق القائمة"
           >
@@ -166,7 +168,9 @@ export default function Sidebar() {
             <LuSettings className="w-4 h-4" />
             <span>الإعدادات والإجازات</span>
           </button>
-          <p className="text-center text-[11px] text-white/60">لوحة المشرف - أمل طاهر</p>
+          <p className="text-center text-[11px] text-white/60">
+            لوحة المشرف - أمل طاهر
+          </p>
         </div>
       </aside>
 

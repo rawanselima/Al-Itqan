@@ -13,7 +13,8 @@ const baloo = Baloo_Bhaijaan_2({
 
 export const metadata: Metadata = {
   title: "نظام الإتقان | إدارة الحلقات القرآنية",
-  description: "نظام متكامل لإدارة الحلقات القرآنية، تتبع الحضور والتسميع، ومتابعة الواجبات اليومية",
+  description:
+    "نظام متكامل لإدارة الحلقات القرآنية، تتبع الحضور والتسميع، ومتابعة الورد اليومي",
 };
 
 export default function RootLayout({
@@ -22,8 +23,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ar" dir="rtl" className={`h-full ${baloo.variable}`} suppressHydrationWarning>
-      <body className={`min-h-screen lg:h-screen lg:overflow-hidden flex flex-col lg:flex-row bg-beige text-text-main antialiased ${baloo.className}`} suppressHydrationWarning>
+    <html
+      lang="ar"
+      dir="rtl"
+      className={`h-full ${baloo.variable}`}
+      suppressHydrationWarning
+    >
+      <body
+        className={`min-h-screen lg:h-screen lg:overflow-hidden flex flex-col lg:flex-row bg-beige text-text-main antialiased ${baloo.className}`}
+        suppressHydrationWarning
+      >
         {/* Responsive Navigation / Sidebar */}
         <Sidebar />
 

@@ -2,12 +2,26 @@
 
 import { useState } from "react";
 import { useCircles } from "@/hooks";
+import type { Circle } from "@/lib/api";
 import { circleSchema, type CircleFormData } from "@/lib/schemas";
-import { Button, InputField, TextareaField, ModalForm, LoadingState, ConfirmDialog } from "@/components/ui";
+import {
+  Button,
+  InputField,
+  TextareaField,
+  ModalForm,
+  LoadingState,
+  ConfirmDialog,
+} from "@/components/ui";
 import { LuPlus, LuBookOpen, LuPencil, LuTrash2 } from "react-icons/lu";
 
 const DAYS_OF_WEEK = [
-  "السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة",
+  "السبت",
+  "الأحد",
+  "الإثنين",
+  "الثلاثاء",
+  "الأربعاء",
+  "الخميس",
+  "الجمعة",
 ];
 
 export default function CirclesPage() {
@@ -23,8 +37,13 @@ export default function CirclesPage() {
   } = useCircles();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingCircle, setEditingCircle] = useState<CircleFormData | null>(null);
-  const [circleToDelete, setCircleToDelete] = useState<{ _id: string; name: string } | null>(null);
+  const [editingCircle, setEditingCircle] = useState<CircleFormData | null>(
+    null,
+  );
+  const [circleToDelete, setCircleToDelete] = useState<{
+    _id: string;
+    name: string;
+  } | null>(null);
 
   const openAddModal = () => {
     setEditingCircle({
@@ -37,7 +56,7 @@ export default function CirclesPage() {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (circle: CircleFormData) => {
+  const openEditModal = (circle: Circle | CircleFormData) => {
     const displayName = circle.teacherName?.trim() || circle.name || "";
     setEditingCircle({
       ...circle,
@@ -74,7 +93,9 @@ export default function CirclesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-text-main">إدارة الحلقات</h2>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-text-main">
+            إدارة الحلقات
+          </h2>
           <p className="text-xs sm:text-sm text-text-muted mt-1">
             إضافة وتعديل حلقات التحفيظ وتحديد أيام وساعة الانعقاد
           </p>
@@ -96,11 +117,18 @@ export default function CirclesPage() {
           <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center text-primary mx-auto">
             <LuBookOpen className="w-8 h-8" />
           </div>
-          <h3 className="text-base sm:text-lg font-bold text-text-main">لا توجد حلقات مسجلة حتى الآن</h3>
+          <h3 className="text-base sm:text-lg font-bold text-text-main">
+            لا توجد حلقات مسجلة حتى الآن
+          </h3>
           <p className="text-xs sm:text-sm text-text-muted max-w-sm mx-auto">
-            ابدأ بإضافة الحلقة الأولى لتتمكن من تسجيل الطالبات ومتابعة الحضور والواجبات.
+            ابدأ بإضافة الحلقة الأولى لتتمكن من تسجيل الطالبات ومتابعة الحضور
+            والورد.
           </p>
-          <Button onClick={openAddModal} size="sm" iconLeft={<LuPlus className="w-4 h-4" />}>
+          <Button
+            onClick={openAddModal}
+            size="sm"
+            iconLeft={<LuPlus className="w-4 h-4" />}
+          >
             إضافة الحلقة الأولى
           </Button>
         </div>
@@ -114,7 +142,9 @@ export default function CirclesPage() {
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
                   <div>
-                    <span className="text-[11px] text-text-muted font-bold">المعلمة</span>
+                    <span className="text-[11px] text-text-muted font-bold">
+                      المعلمة
+                    </span>
                     <h3 className="font-extrabold text-base sm:text-lg text-text-main group-hover:text-primary transition-colors">
                       {circle.teacherName?.trim() || circle.name}
                     </h3>
@@ -126,7 +156,9 @@ export default function CirclesPage() {
 
                 {/* Days Badges */}
                 <div className="space-y-1.5">
-                  <span className="text-xs text-text-muted font-medium">أيام الانعقاد:</span>
+                  <span className="text-xs text-text-muted font-medium">
+                    أيام الانعقاد:
+                  </span>
                   <div className="flex flex-wrap gap-1.5">
                     {(circle.days || []).map((day) => (
                       <span
@@ -159,7 +191,7 @@ export default function CirclesPage() {
                   variant="secondary"
                   size="xs"
                   className="flex-1"
-                  onClick={() => openEditModal(circle as any)}
+                  onClick={() => openEditModal(circle)}
                   iconLeft={<LuPencil className="w-3.5 h-3.5" />}
                 >
                   تعديل
@@ -209,7 +241,7 @@ export default function CirclesPage() {
 
             <div className="space-y-2">
               <label className="text-xs font-bold text-text-main">
-                أيام الانعقاد <span className="text-rose-500">*</span>
+                أيام الحلقه <span className="text-rose-500">*</span>
               </label>
               <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                 {DAYS_OF_WEEK.map((day) => {
@@ -222,11 +254,18 @@ export default function CirclesPage() {
                       size="xs"
                       className="py-2 px-1 text-xs"
                       onClick={() => {
-                        const currentDays = (form.watch("days") as (string | number)[]) || [];
+                        const currentDays =
+                          (form.watch("days") as (string | number)[]) || [];
                         if (currentDays.includes(day)) {
-                          form.setValue("days", currentDays.filter((d) => d !== day), { shouldValidate: true });
+                          form.setValue(
+                            "days",
+                            currentDays.filter((d) => d !== day),
+                            { shouldValidate: true },
+                          );
                         } else {
-                          form.setValue("days", [...currentDays, day], { shouldValidate: true });
+                          form.setValue("days", [...currentDays, day], {
+                            shouldValidate: true,
+                          });
                         }
                       }}
                     >

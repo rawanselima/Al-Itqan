@@ -6,16 +6,10 @@ import { CustomSelect } from "@/components/CustomSelect";
 import { Dialog, Button, LoadingState } from "@/components/ui";
 import { showToast } from "@/lib/toast";
 import {
-  LuX,
   LuCopy,
   LuCheck,
-  LuRefreshCw,
   LuCalendar,
-  LuTriangleAlert,
-  LuChevronDown,
-  LuChevronUp,
 } from "react-icons/lu";
-import { FaWhatsapp } from "react-icons/fa6";
 
 const MONTHS_AR = [
   { val: 1, name: "يناير (1)" },
@@ -37,7 +31,7 @@ interface HomeworkReportModalProps {
   onClose: () => void;
   circle: Circle | undefined;
   currentSaturday?: Date;
-  studentsList?: any[];
+  studentsList?: unknown[];
   recordsMap?: Map<string, boolean>;
 }
 
@@ -52,32 +46,36 @@ export function HomeworkReportModal({
 
   const [loading, setLoading] = useState(false);
   const [reportText, setReportText] = useState("");
-  const [originalText, setOriginalText] = useState("");
-  const [warnings, setWarnings] = useState<Array<{ studentName: string; date: string; type: string }>>([]);
-  const [showWarnings, setShowWarnings] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Fetch report data
-  const fetchReport = async () => {
-    if (!isOpen || !circle?._id) return;
-    try {
-      setLoading(true);
-      const data = await api.getHomeworkReport(circle._id, year, month);
-      setReportText(data.text);
-      setOriginalText(data.text);
-      setWarnings(data.warnings || []);
-    } catch (err: any) {
-      console.error("فشل جلب تقرير الواجب:", err);
-      showToast.error(err.message || "فشل جلب تقرير الواجب");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (isOpen) {
-      fetchReport();
-    }
+    if (!isOpen || !circle?._id) return;
+    let cancelled = false;
+    const circleId = circle._id;
+
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
+      try {
+        setLoading(true);
+        const data = await api.getHomeworkReport(circleId, year, month);
+        if (!cancelled) {
+          setReportText(data.text);
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          console.error("فشل جلب تقرير الواجب:", err);
+          showToast.error(err instanceof Error ? err.message : "فشل جلب تقرير الواجب");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, circle?._id, year, month]);
 
   const handleCopy = async () => {
@@ -91,10 +89,6 @@ export function HomeworkReportModal({
     }
   };
 
-  const handleReset = () => {
-    setReportText(originalText);
-  };
-
   if (!circle) return null;
 
   const circleDisplayName = circle.teacherName?.trim() || circle.name;
@@ -103,7 +97,7 @@ export function HomeworkReportModal({
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title={`تقرير الواجب والحضور الشهري - ${circleDisplayName}`}
+      title={`تقرير الوردوالحضور الشهري - ${circleDisplayName}`}
       size="xl"
       showCloseButton={true}
       className="h-[88vh]"
@@ -113,12 +107,17 @@ export function HomeworkReportModal({
         {/* Filter Bar */}
         <div className="px-6 py-3 border-b border-surface-border bg-surface flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-text-muted">تقرير شهر:</span>
+            <span className="text-xs font-bold text-text-muted">
+              تقرير شهر:
+            </span>
             <div className="w-40">
               <CustomSelect
                 value={month}
                 onChange={(val) => setMonth(Number(val))}
-                options={MONTHS_AR.map((m) => ({ value: m.val, label: m.name }))}
+                options={MONTHS_AR.map((m) => ({
+                  value: m.val,
+                  label: m.name,
+                }))}
                 icon={<LuCalendar className="w-4 h-4 text-primary" />}
               />
             </div>
@@ -137,7 +136,10 @@ export function HomeworkReportModal({
         <div className="p-4 sm:p-6 flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Text Area */}
           {loading ? (
-            <LoadingState text="جاري إعداد التقرير الشهري..." className="my-auto flex-1 py-24" />
+            <LoadingState
+              text="جاري إعداد التقرير الشهري..."
+              className="my-auto flex-1 py-24"
+            />
           ) : (
             <div className="flex-1 min-h-0 flex flex-col">
               <textarea
@@ -151,33 +153,21 @@ export function HomeworkReportModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-surface-border flex items-center justify-between bg-surface-hover/20 shrink-0">
+        <div className="px-6 py-4 border-t border-surface-border flex items-center justify-end bg-surface-hover/20 shrink-0">
           <Button
             type="button"
-            variant="secondary"
-            onClick={handleReset}
-            iconLeft={<LuRefreshCw className="w-3.5 h-3.5" />}
+            variant="success"
+            onClick={handleCopy}
+            iconLeft={
+              copied ? (
+                <LuCheck className="w-4 h-4 text-emerald-200" />
+              ) : (
+                <LuCopy className="w-4 h-4" />
+              )
+            }
           >
-            إعادة ضبط النص
+            {copied ? "تم النسخ بنجاح!" : "نسخ التقرير للواتساب"}
           </Button>
-
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-            >
-              إغلاق
-            </Button>
-            <Button
-              type="button"
-              variant="success"
-              onClick={handleCopy}
-              iconLeft={copied ? <LuCheck className="w-4 h-4 text-emerald-200" /> : <LuCopy className="w-4 h-4" />}
-            >
-              {copied ? "تم النسخ بنجاح!" : "نسخ التقرير للواتساب"}
-            </Button>
-          </div>
         </div>
       </div>
     </Dialog>

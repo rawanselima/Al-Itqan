@@ -6,7 +6,6 @@ import { CustomSelect } from "@/components/CustomSelect";
 import { Dialog, Button, InputField, TextareaField, LoadingState, ConfirmDialog } from "@/components/ui";
 import { showToast } from "@/lib/toast";
 import {
-  LuX,
   LuSettings,
   LuCalendarOff,
   LuSave,
@@ -52,38 +51,47 @@ export function SettingsModal({
   const [holidayToDelete, setHolidayToDelete] = useState<Holiday | null>(null);
   const [deletingHoliday, setDeletingHoliday] = useState(false);
 
-  // Sync initial tab when opened
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(isOpen);
+
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
     if (isOpen) {
       setActiveTab(initialTab);
-      loadSettings();
-      loadHolidays();
     }
-  }, [isOpen, initialTab]);
+  }
 
-  const loadSettings = async () => {
-    try {
+  // Load settings & holidays when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
       setLoadingSettings(true);
-      const data = await api.getSettings();
-      setSettings(data);
-    } catch (err) {
-      console.error("فشل تحميل الإعدادات:", err);
-    } finally {
-      setLoadingSettings(false);
-    }
-  };
-
-  const loadHolidays = async () => {
-    try {
       setLoadingHolidays(true);
-      const data = await api.getHolidays();
-      setHolidays(data);
-    } catch (err) {
-      console.error("فشل تحميل الإجازات:", err);
-    } finally {
-      setLoadingHolidays(false);
-    }
-  };
+      try {
+        const [settingsData, holidaysData] = await Promise.all([
+          api.getSettings(),
+          api.getHolidays(),
+        ]);
+        if (!cancelled) {
+          setSettings(settingsData);
+          setHolidays(holidaysData);
+        }
+      } catch (err) {
+        console.error("فشل تحميل الإعدادات أو الإجازات:", err);
+      } finally {
+        if (!cancelled) {
+          setLoadingSettings(false);
+          setLoadingHolidays(false);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,8 +101,8 @@ export function SettingsModal({
       setSettings(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (err: any) {
-      showToast.error(err.message || "فشل حفظ الإعدادات");
+    } catch (err: unknown) {
+      showToast.error(err instanceof Error ? err.message : "فشل حفظ الإعدادات");
     } finally {
       setSavingSettings(false);
     }
@@ -126,8 +134,8 @@ export function SettingsModal({
       setNewTo("");
       setNewReason("");
       setNewCircleId("");
-    } catch (err: any) {
-      setHolidayError(err.message || "فشل إضافة الإجازة");
+    } catch (err: unknown) {
+      setHolidayError(err instanceof Error ? err.message : "فشل إضافة الإجازة");
     } finally {
       setAddingHoliday(false);
     }
@@ -141,22 +149,23 @@ export function SettingsModal({
       setHolidays((prev) => prev.filter((h) => h._id !== holidayToDelete._id));
       showToast.success("تم حذف الإجازة بنجاح ✓");
       setHolidayToDelete(null);
-    } catch (err: any) {
-      showToast.error(err.message || "فشل حذف الإجازة");
+    } catch (err: unknown) {
+      showToast.error(err instanceof Error ? err.message : "فشل حذف الإجازة");
     } finally {
       setDeletingHoliday(false);
     }
   };
 
-  const safeCircles = Array.isArray(circles)
+  const maybeWrapped = circles as unknown as { circles?: Circle[] };
+  const safeCircles: Circle[] = Array.isArray(circles)
     ? circles
-    : Array.isArray((circles as any)?.circles)
-    ? (circles as any).circles
+    : Array.isArray(maybeWrapped?.circles)
+    ? maybeWrapped.circles
     : [];
 
   const circleOptions = [
     { value: "", label: "جميع الحلقات (إجازة عامة)" },
-    ...safeCircles.map((c: any) => ({ value: c._id, label: c.name })),
+    ...safeCircles.map((c) => ({ value: c._id, label: c.name })),
   ];
 
   return (
@@ -166,10 +175,10 @@ export function SettingsModal({
       title={activeTab === "settings" ? "إعدادات المنصة والتقارير" : "إدارة الإجازات والعطلات"}
       size="lg"
       showCloseButton={true}
-      className="min-h-[65vh]"
+      className="h-[88vh]"
       bodyClassName="p-0 flex-1 min-h-0 flex flex-col overflow-hidden"
     >
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Tab Navigation */}
         <div className="flex border-b border-surface-border bg-surface px-6 pt-2 gap-2 shrink-0">
           <button
@@ -197,7 +206,7 @@ export function SettingsModal({
         </div>
 
         {/* Content Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-5 sm:p-6 overflow-y-auto flex-1 min-h-0 space-y-6">
           {activeTab === "settings" ? (
             /* TAB 1: SETTINGS */
             <form onSubmit={handleSaveSettings} className="space-y-4">
@@ -223,7 +232,8 @@ export function SettingsModal({
                       value={settings.introText || ""}
                       onChange={(e) => setSettings({ ...settings, introText: e.target.value })}
                       placeholder="التقرير الأسبوعي والشهري&#10;‏﷽&#10;۝ إِنَّ اللَّهَ وَمَلائِكَتَهُ يُصَلُّونَ عَلَى النَّبِيِّ..."
-                      rows={5}
+                      rows={6}
+                      autoResize
                       className="font-arabic leading-relaxed"
                     />
                     <p className="text-[11px] text-text-muted">
@@ -238,7 +248,8 @@ export function SettingsModal({
                       value={settings.outroText || ""}
                       onChange={(e) => setSettings({ ...settings, outroText: e.target.value })}
                       placeholder="جزاكم الله خيراً وبارك في همتكم العالية..."
-                      rows={3}
+                      rows={4}
+                      autoResize
                       className="font-arabic"
                     />
                   </div>
@@ -355,7 +366,7 @@ export function SettingsModal({
                       const circleName =
                         typeof h.circleId === "object" && h.circleId !== null
                           ? h.circleId.name
-                          : safeCircles.find((c: any) => c._id === h.circleId)?.name || "جميع الحلقات (عامة)";
+                          : safeCircles.find((c) => c._id === h.circleId)?.name || "جميع الحلقات (عامة)";
 
                       return (
                         <div

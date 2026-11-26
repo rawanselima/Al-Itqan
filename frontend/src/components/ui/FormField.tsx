@@ -6,8 +6,12 @@ import {
   InputHTMLAttributes,
   TextareaHTMLAttributes,
   useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
 } from "react";
 import {
+  Control,
   Controller,
   ControllerProps,
   FieldPath,
@@ -31,22 +35,23 @@ interface BaseFieldProps {
 type RegisterOptions<T extends FieldValues> = {
   register?: UseFormRegister<T>;
   name?: FieldPath<T>;
-  control?: any;
+  control?: unknown;
   rules?: ControllerProps["rules"];
 };
 
-type InputFieldProps<T extends FieldValues = any> = BaseFieldProps &
+type InputFieldProps<T extends FieldValues = FieldValues> = BaseFieldProps &
   RegisterOptions<T> &
   Omit<InputHTMLAttributes<HTMLInputElement>, "id"> & {
     type?: "text" | "email" | "tel" | "number" | "date" | "password";
     placeholder?: string;
   };
 
-type TextareaFieldProps<T extends FieldValues = any> = BaseFieldProps &
+type TextareaFieldProps<T extends FieldValues = FieldValues> = BaseFieldProps &
   RegisterOptions<T> &
   Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "id"> & {
     placeholder?: string;
     rows?: number;
+    autoResize?: boolean;
   };
 
 export interface SelectOption {
@@ -57,7 +62,7 @@ export interface SelectOption {
   dotColor?: string;
 }
 
-type SelectFieldProps<T extends FieldValues = any> = BaseFieldProps &
+type SelectFieldProps<T extends FieldValues = FieldValues> = BaseFieldProps &
   RegisterOptions<T> & {
     placeholder?: string;
     options: SelectOption[];
@@ -66,7 +71,7 @@ type SelectFieldProps<T extends FieldValues = any> = BaseFieldProps &
     onChange?: (value: string | number) => void;
   };
 
-type CheckboxFieldProps<T extends FieldValues = any> = BaseFieldProps &
+type CheckboxFieldProps<T extends FieldValues = FieldValues> = BaseFieldProps &
   RegisterOptions<T> &
   Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type"> & {
     labelPosition?: "before" | "after";
@@ -75,7 +80,7 @@ type CheckboxFieldProps<T extends FieldValues = any> = BaseFieldProps &
 function useControlledMode<T extends FieldValues>(
   name?: FieldPath<T>,
   register?: UseFormRegister<T>,
-  control?: any
+  control?: unknown
 ) {
   const formContext = useFormContext<T>();
   return !!name && (register || control || formContext?.control);
@@ -170,8 +175,10 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
     ref
   ) => {
     const isControlled = useControlledMode(name, register, control);
-    const formContext = useFormContext<any>();
-    const formControl = control || (register ? undefined : formContext?.control);
+    const formContext = useFormContext();
+    const formControl = (control || (register ? undefined : formContext?.control)) as
+      | Control<FieldValues>
+      | undefined;
     const generatedId = useId();
     const fieldId = id || generatedId;
 
@@ -249,6 +256,33 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(
 
 InputField.displayName = "InputField";
 
+const AutoResizeTextarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement> & { autoResize?: boolean }
+>(({ autoResize, value, className, ...props }, ref) => {
+  const localRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useImperativeHandle(ref, () => localRef.current as HTMLTextAreaElement, []);
+
+  useLayoutEffect(() => {
+    if (!autoResize || !localRef.current) return;
+    const el = localRef.current;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [autoResize, value]);
+
+  return (
+    <textarea
+      ref={localRef}
+      value={value}
+      className={`${className} ${autoResize ? "overflow-hidden" : ""}`}
+      {...props}
+    />
+  );
+});
+
+AutoResizeTextarea.displayName = "AutoResizeTextarea";
+
 export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>(
   (
     {
@@ -260,6 +294,7 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
       labelClassName = "",
       placeholder,
       rows = 3,
+      autoResize = false,
       register,
       name,
       control,
@@ -271,8 +306,10 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
     ref
   ) => {
     const isControlled = useControlledMode(name, register, control);
-    const formContext = useFormContext<any>();
-    const formControl = control || (register ? undefined : formContext?.control);
+    const formContext = useFormContext();
+    const formControl = (control || (register ? undefined : formContext?.control)) as
+      | Control<FieldValues>
+      | undefined;
     const generatedId = useId();
     const fieldId = id || generatedId;
 
@@ -305,11 +342,12 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
                 labelClassName={labelClassName}
                 fieldId={fieldId}
               >
-                <textarea
+                <AutoResizeTextarea
                   id={fieldId}
                   placeholder={placeholder}
                   rows={rows}
                   disabled={disabled}
+                  autoResize={autoResize}
                   className={getClasses(hasError)}
                   {...props}
                   name={field.name}
@@ -340,12 +378,13 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
         labelClassName={labelClassName}
         fieldId={fieldId}
       >
-        <textarea
+        <AutoResizeTextarea
           ref={ref}
           id={fieldId}
           placeholder={placeholder}
           rows={rows}
           disabled={disabled}
+          autoResize={autoResize}
           className={getClasses(hasError)}
           {...props}
           aria-invalid={hasError}
@@ -384,8 +423,10 @@ export const SelectField = forwardRef<HTMLDivElement, SelectFieldProps>(
     ref
   ) => {
     const isControlled = useControlledMode(name, register, control);
-    const formContext = useFormContext<any>();
-    const formControl = control || (register ? undefined : formContext?.control);
+    const formContext = useFormContext();
+    const formControl = (control || (register ? undefined : formContext?.control)) as
+      | Control<FieldValues>
+      | undefined;
     const generatedId = useId();
     const fieldId = id || generatedId;
 
@@ -488,8 +529,10 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
     ref
   ) => {
     const isControlled = useControlledMode(name, register, control);
-    const formContext = useFormContext<any>();
-    const formControl = control || (register ? undefined : formContext?.control);
+    const formContext = useFormContext();
+    const formControl = (control || (register ? undefined : formContext?.control)) as
+      | Control<FieldValues>
+      | undefined;
     const generatedId = useId();
     const fieldId = id || generatedId;
     const cleanLabel = label.replace(/\s*\*+\s*$/, "").trim();

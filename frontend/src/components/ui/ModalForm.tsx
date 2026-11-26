@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm, UseFormProps, UseFormReturn, FieldPath, FieldValues } from "react-hook-form";
+import { useForm, UseFormProps, UseFormReturn, FieldPath, FieldValues, DefaultValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z, ZodSchema } from "zod";
 import { Dialog } from "./Dialog";
@@ -49,7 +49,7 @@ export function ModalForm<T extends FieldValues>({
   // تحديث قيم النموذج ومسح الأخطاء القديمة عند فتح النافذة أو تغير البيانات
   useEffect(() => {
     if (isOpen) {
-      form.reset((defaultValues || {}) as UseFormProps<T>["defaultValues"]);
+      form.reset((defaultValues || {}) as DefaultValues<T>);
     }
   }, [isOpen, defaultValues, form]);
 
@@ -152,7 +152,7 @@ export function SimpleModalForm<T extends FieldValues>({
   // تحديث قيم النموذج ومسح الأخطاء القديمة عند فتح النافذة أو تغير البيانات
   useEffect(() => {
     if (isOpen) {
-      form.reset((defaultValues || {}) as UseFormProps<T>["defaultValues"]);
+      form.reset((defaultValues || {}) as DefaultValues<T>);
     }
   }, [isOpen, defaultValues, form]);
 

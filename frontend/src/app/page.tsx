@@ -47,14 +47,16 @@ export default function DashboardPage() {
   }).format(new Date());
 
   const currentDayOfWeek = new Date().getDay(); // 0=الأحد ... 6=السبت
-  const currentDayName = new Intl.DateTimeFormat("ar-EG", { weekday: "long" }).format(new Date());
+  const currentDayName = new Intl.DateTimeFormat("ar-EG", {
+    weekday: "long",
+  }).format(new Date());
 
   const todaysCircles = circles.filter((c) =>
     c.days.some((d) => {
       if (typeof d === "number") return d === currentDayOfWeek;
       const dStr = String(d);
       return dStr.includes(currentDayName) || currentDayName.includes(dStr);
-    })
+    }),
   );
 
   return (
@@ -66,9 +68,12 @@ export default function DashboardPage() {
             <LuCalendar className="w-3.5 h-3.5" />
             <span>{todayArabic}</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white">مرحباً بك في نظام الإتقان</h2>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
+            مرحباً بك في نظام الإتقان
+          </h2>
           <p className="text-white/80 text-xs sm:text-sm max-w-xl">
-            إدارة الحلقات القرآنية، تسجيل الحضور والتسميع بأسبقية الحضور، ومتابعة الواجبات الأسبوعية والتقارير الشهرية بكل سهولة وإتقان.
+            إدارة الحلقات القرآنية، تسجيل الحضور والتسميع بأسبقية الحضور،
+            ومتابعة الورد الأسبوعية والتقارير الشهرية بكل سهولة وإتقان.
           </p>
         </div>
         <div className="absolute -left-10 -bottom-10 w-64 h-64 bg-white/5 rounded-full blur-2xl pointer-events-none" />
@@ -78,8 +83,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
         <div className="bg-surface rounded-2xl p-5 sm:p-6 border border-surface-border shadow-xs flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs sm:text-sm font-medium text-text-muted">إجمالي الحلقات</span>
-            <p className="text-2xl sm:text-3xl font-bold text-text-main">{loading ? <Spinner size="sm" /> : circles.length}</p>
+            <span className="text-xs sm:text-sm font-medium text-text-muted">
+              إجمالي الحلقات
+            </span>
+            <p className="text-2xl sm:text-3xl font-bold text-text-main">
+              {loading ? <Spinner size="sm" /> : circles.length}
+            </p>
           </div>
           <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-primary-light text-primary flex items-center justify-center">
             <LuBookOpen className="w-6 h-6" />
@@ -88,8 +97,12 @@ export default function DashboardPage() {
 
         <div className="bg-surface rounded-2xl p-5 sm:p-6 border border-surface-border shadow-xs flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs sm:text-sm font-medium text-text-muted">إجمالي الطالبات المسجلات</span>
-            <p className="text-2xl sm:text-3xl font-bold text-text-main">{loading ? <Spinner size="sm" /> : studentsCount}</p>
+            <span className="text-xs sm:text-sm font-medium text-text-muted">
+              إجمالي الطالبات المسجلات
+            </span>
+            <p className="text-2xl sm:text-3xl font-bold text-text-main">
+              {loading ? <Spinner size="sm" /> : studentsCount}
+            </p>
           </div>
           <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-primary-light text-primary flex items-center justify-center">
             <LuGraduationCap className="w-6 h-6" />
@@ -98,7 +111,9 @@ export default function DashboardPage() {
 
         <div className="bg-surface rounded-2xl p-5 sm:p-6 border border-surface-border shadow-xs flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs sm:text-sm font-medium text-text-muted">حلقات اليوم ({currentDayName})</span>
+            <span className="text-xs sm:text-sm font-medium text-text-muted">
+              حلقات اليوم ({currentDayName})
+            </span>
             <p className="text-2xl sm:text-3xl font-bold text-primary">
               {loading ? <Spinner size="sm" /> : todaysCircles.length}
             </p>
@@ -111,7 +126,9 @@ export default function DashboardPage() {
 
       {/* Quick Action Shortcuts */}
       <div className="space-y-3 sm:space-y-4">
-        <h3 className="text-base sm:text-lg font-bold text-text-main">إجراءات سريعة</h3>
+        <h3 className="text-base sm:text-lg font-bold text-text-main">
+          إجراءات سريعة
+        </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <Link
             href="/attendance"
@@ -124,7 +141,9 @@ export default function DashboardPage() {
               <h4 className="font-bold text-text-main group-hover:text-primary transition-colors text-sm sm:text-base">
                 تسجيل الحضور والتسميع
               </h4>
-              <p className="text-xs text-text-muted mt-1">تسجيل حضور حلقة اليوم وترتيب التسميع</p>
+              <p className="text-xs text-text-muted mt-1">
+                تسجيل حضور حلقة اليوم وترتيب التسميع
+              </p>
             </div>
           </Link>
 
@@ -137,9 +156,11 @@ export default function DashboardPage() {
             </div>
             <div>
               <h4 className="font-bold text-text-main group-hover:text-primary transition-colors text-sm sm:text-base">
-                متابعة الواجبات
+                متابعة الورد
               </h4>
-              <p className="text-xs text-text-muted mt-1">تتبع أداء الواجب اليومي من السبت للخميس</p>
+              <p className="text-xs text-text-muted mt-1">
+                تتبع أداء الورداليومي من السبت للخميس
+              </p>
             </div>
           </Link>
 
@@ -154,7 +175,9 @@ export default function DashboardPage() {
               <h4 className="font-bold text-text-main group-hover:text-primary transition-colors text-sm sm:text-base">
                 إضافة طالبة جديدة
               </h4>
-              <p className="text-xs text-text-muted mt-1">تسجيل طالبة جديدة وربطها بحلقتها</p>
+              <p className="text-xs text-text-muted mt-1">
+                تسجيل طالبة جديدة وربطها بحلقتها
+              </p>
             </div>
           </Link>
 
@@ -169,7 +192,9 @@ export default function DashboardPage() {
               <h4 className="font-bold text-text-main group-hover:text-primary transition-colors text-sm sm:text-base">
                 التقرير الشهري والطباعة
               </h4>
-              <p className="text-xs text-text-muted mt-1">استخراج وطباعة تقرير الحضور والواجبات</p>
+              <p className="text-xs text-text-muted mt-1">
+                استخراج وطباعة تقرير الحضور والورد
+              </p>
             </div>
           </Link>
         </div>
@@ -184,7 +209,10 @@ export default function DashboardPage() {
               {todaysCircles.length} حلقة
             </span>
           </h3>
-          <Link href="/circles" className="text-xs sm:text-sm font-semibold text-primary hover:underline">
+          <Link
+            href="/circles"
+            className="text-xs sm:text-sm font-semibold text-primary hover:underline"
+          >
             عرض كل الحلقات &larr;
           </Link>
         </div>
@@ -193,7 +221,10 @@ export default function DashboardPage() {
           <LoadingState text="جاري تحميل حلقات اليوم..." />
         ) : todaysCircles.length === 0 ? (
           <div className="text-center py-8 text-text-muted bg-beige/60 rounded-2xl border border-dashed border-surface-border text-xs sm:text-sm">
-            <p>لا توجد حلقات مجدولة لليوم ({currentDayName}). يمكنك تصفح باقي الحلقات من القائمة.</p>
+            <p>
+              لا توجد حلقات مجدولة لليوم ({currentDayName}). يمكنك تصفح باقي
+              الحلقات من القائمة.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -204,13 +235,18 @@ export default function DashboardPage() {
               >
                 <div>
                   <div className="flex items-start justify-between">
-                    <h4 className="font-bold text-text-main text-sm sm:text-base">{circle.name}</h4>
+                    <h4 className="font-bold text-text-main text-sm sm:text-base">
+                      {circle.name}
+                    </h4>
                     <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-primary text-white">
                       {circle.time}
                     </span>
                   </div>
                   <p className="text-xs text-text-muted mt-2">
-                    الطالبات المسجلات: <span className="font-bold text-text-main">{circle.studentCount || 0}</span>
+                    الطالبات المسجلات:{" "}
+                    <span className="font-bold text-text-main">
+                      {circle.studentCount || 0}
+                    </span>
                   </p>
                 </div>
 
@@ -225,7 +261,7 @@ export default function DashboardPage() {
                     href={`/homework?circleId=${circle._id}`}
                     className="flex-1 py-2 text-center rounded-xl bg-surface border border-surface-border text-text-main text-xs font-bold hover:bg-beige transition-colors"
                   >
-                    الواجبات
+                    الورد
                   </Link>
                 </div>
               </div>
