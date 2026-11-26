@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import Student from '../models/Student';
 import Circle from '../models/Circle';
 import { validate, asyncHandler } from '../middleware';
+import { buildStudentFilter } from '../utils';
 import {
   studentCreateSchema,
   studentUpdateSchema,
@@ -17,24 +18,11 @@ router.get(
   validate({ query: studentQuerySchema.shape.query }),
   asyncHandler(async (req: Request, res: Response) => {
     const { circleId, search, isActive = true, page = 1, limit = 50 } = req.query;
-    const filter: any = {};
-
-    if (circleId) filter.circleId = circleId;
-    if (isActive !== undefined) filter.isActive = Boolean(isActive);
-    if (search) {
-      filter.$or = [
-        { name: { $regex: String(search), $options: 'i' } },
-        { phone: { $regex: String(search), $options: 'i' } },
-      ];
-    }
-
-    // Exclude soft-deleted students unless explicitly requested
-    if (!filter.deletedAt) {
-      filter.$or = [
-        { deletedAt: null },
-        { deletedAt: { $exists: false } }
-      ];
-    }
+    const filter = buildStudentFilter({
+      circleId: circleId ? String(circleId) : undefined,
+      search: typeof search === 'string' ? search : undefined,
+      isActive: isActive !== undefined ? Boolean(isActive) : undefined,
+    });
 
     const pageNum = parseInt(page as string, 10);
     const limitNum = Math.min(parseInt(limit as string, 10), 100);

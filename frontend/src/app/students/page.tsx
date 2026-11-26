@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useStudents, useCircles } from "@/hooks";
 import { studentSchema, type StudentFormData } from "@/lib/schemas";
 import { Button, InputField, SelectField, ModalForm, LoadingState, ConfirmDialog } from "@/components/ui";
@@ -12,6 +12,8 @@ import {
   LuPencil,
   LuTrash2,
   LuBookOpen,
+  LuSearch,
+  LuX,
 } from "react-icons/lu";
 import { FaWhatsapp } from "react-icons/fa6";
 import { formatCircleDays } from "@/lib/api";
@@ -35,7 +37,6 @@ interface Student {
 export default function StudentsPage() {
   const {
     circles,
-    isPending: circlesLoading,
   } = useCircles();
 
   const [selectedCircleId, setSelectedCircleId] = useState("");
@@ -63,7 +64,7 @@ export default function StudentsPage() {
     isTogglingWarning,
   } = useStudents({
     circleId: selectedCircleId || undefined,
-    search: debouncedSearch || undefined,
+    search: debouncedSearch.trim() || undefined,
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -91,7 +92,7 @@ export default function StudentsPage() {
 
   const handleSave = async (data: StudentFormData) => {
     if (editingStudent?._id) {
-      await updateStudent({ id: editingStudent._id, data: data as any });
+      await updateStudent({ id: editingStudent._id, data });
     } else {
       await createStudent({
         ...data,
@@ -161,14 +162,28 @@ export default function StudentsPage() {
 
           {/* Search Box */}
           <div className="relative flex-1">
+            <LuSearch className="w-4 h-4 text-text-muted absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               suppressHydrationWarning
               type="text"
               placeholder="ابحث باسم الطالبة أو رقم الهاتف..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-surface-border text-xs sm:text-sm focus:outline-none focus:border-primary bg-surface text-text-main"
+              className="w-full pr-10 pl-9 py-2.5 rounded-xl border border-surface-border text-xs sm:text-sm focus:outline-none focus:border-primary bg-surface text-text-main"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setDebouncedSearch("");
+                }}
+                aria-label="مسح البحث"
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-text-muted hover:text-text-main hover:bg-beige cursor-pointer"
+              >
+                <LuX className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 

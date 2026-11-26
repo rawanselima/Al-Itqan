@@ -33,7 +33,7 @@ export function useStudents(params: StudentsParams = {}) {
   const { create, update, delete: deleteStudent, isCreating, isUpdating, isDeleting } = useCrudMutations<
     Student,
     { name: string; phone?: string; circleId: string; joinedAt?: string; leftAt?: string | null; warningForRemoval?: boolean },
-    Partial<Student>
+    Partial<Omit<Student, "circleId">> & { circleId?: string | Student["circleId"] }
   >({
     entityName: "الطالبة",
     queryKey: ["students"],
