@@ -74,7 +74,12 @@ export function formatCircleDays(days?: Array<number | string>, separator = "، 
 
 export const api = {
   // Circles
-  getCircles: () => request<Circle[]>('/circles'),
+  getCircles: async (): Promise<Circle[]> => {
+    const res = await request<any>('/circles');
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.circles)) return res.circles;
+    return [];
+  },
   getCircle: (id: string) => request<Circle>(`/circles/${id}`),
   createCircle: (data: Partial<Circle>) =>
     request<Circle>('/circles', { method: 'POST', body: JSON.stringify(data) }),
@@ -83,11 +88,14 @@ export const api = {
   deleteCircle: (id: string) => request<{ message: string }>(`/circles/${id}`, { method: 'DELETE' }),
 
   // Students
-  getStudents: (params?: { circleId?: string; search?: string }) => {
+  getStudents: async (params?: { circleId?: string; search?: string }): Promise<any[]> => {
     const query = new URLSearchParams();
     if (params?.circleId) query.append('circleId', params.circleId);
     if (params?.search) query.append('search', params.search);
-    return request<any[]>(`/students?${query.toString()}`);
+    const res = await request<any>(`/students?${query.toString()}`);
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.students)) return res.students;
+    return [];
   },
   createStudent: (data: {
     name: string;

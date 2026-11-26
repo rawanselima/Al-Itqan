@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { api, Circle, Holiday, Settings } from "@/lib/api";
 import { CustomSelect } from "@/components/CustomSelect";
+import { Dialog, Button, InputField, TextareaField, LoadingState, ConfirmDialog } from "@/components/ui";
+import { showToast } from "@/lib/toast";
 import {
   LuX,
   LuSettings,
@@ -23,7 +25,7 @@ interface SettingsModalProps {
 export function SettingsModal({
   isOpen,
   onClose,
-  circles,
+  circles = [],
   initialTab = "settings",
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<"settings" | "holidays">(initialTab);
@@ -47,6 +49,8 @@ export function SettingsModal({
   const [newReason, setNewReason] = useState<string>("");
   const [holidayError, setHolidayError] = useState<string>("");
   const [addingHoliday, setAddingHoliday] = useState(false);
+  const [holidayToDelete, setHolidayToDelete] = useState<Holiday | null>(null);
+  const [deletingHoliday, setDeletingHoliday] = useState(false);
 
   // Sync initial tab when opened
   useEffect(() => {
@@ -90,7 +94,7 @@ export function SettingsModal({
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err: any) {
-      alert(err.message || "فشل حفظ الإعدادات");
+      showToast.error(err.message || "فشل حفظ الإعدادات");
     } finally {
       setSavingSettings(false);
     }
@@ -129,60 +133,45 @@ export function SettingsModal({
     }
   };
 
-  const handleDeleteHoliday = async (id: string) => {
-    if (!confirm("هل أنتِ متأكدة من حذف هذه الإجازة؟")) return;
+  const handleConfirmDeleteHoliday = async () => {
+    if (!holidayToDelete) return;
     try {
-      await api.deleteHoliday(id);
-      setHolidays((prev) => prev.filter((h) => h._id !== id));
+      setDeletingHoliday(true);
+      await api.deleteHoliday(holidayToDelete._id);
+      setHolidays((prev) => prev.filter((h) => h._id !== holidayToDelete._id));
+      showToast.success("تم حذف الإجازة بنجاح ✓");
+      setHolidayToDelete(null);
     } catch (err: any) {
-      alert(err.message || "فشل حذف الإجازة");
+      showToast.error(err.message || "فشل حذف الإجازة");
+    } finally {
+      setDeletingHoliday(false);
     }
   };
 
-  if (!isOpen) return null;
+  const safeCircles = Array.isArray(circles)
+    ? circles
+    : Array.isArray((circles as any)?.circles)
+    ? (circles as any).circles
+    : [];
 
   const circleOptions = [
     { value: "", label: "جميع الحلقات (إجازة عامة)" },
-    ...circles.map((c) => ({ value: c._id, label: c.name })),
+    ...safeCircles.map((c: any) => ({ value: c._id, label: c.name })),
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div
-        className="bg-surface border border-surface-border rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-        dir="rtl"
-      >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-border flex items-center justify-between bg-surface-hover/30">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-              {activeTab === "settings" ? (
-                <LuSettings className="w-5 h-5" />
-              ) : (
-                <LuCalendarOff className="w-5 h-5" />
-              )}
-            </div>
-            <div>
-              <h3 className="font-extrabold text-lg text-text-main">
-                {activeTab === "settings" ? "إعدادات المنصة والتقارير" : "إدارة الإجازات والعطلات"}
-              </h3>
-              <p className="text-xs text-text-muted">
-                {activeTab === "settings"
-                  ? "تخصيص اسم المشرفة والرسائل الترحيبية ونصوص الواتساب"
-                  : "تحديد أيام العطلات والإجازات الرسمية للحلقات"}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-text-muted hover:text-text-main hover:bg-surface-hover rounded-xl transition-colors cursor-pointer"
-          >
-            <LuX className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={activeTab === "settings" ? "إعدادات المنصة والتقارير" : "إدارة الإجازات والعطلات"}
+      size="lg"
+      showCloseButton={true}
+      className="min-h-[65vh]"
+      bodyClassName="p-0 flex-1 min-h-0 flex flex-col overflow-hidden"
+    >
+      <div className="flex flex-col h-full">
         {/* Tab Navigation */}
-        <div className="flex border-b border-surface-border bg-surface px-6 pt-2 gap-2">
+        <div className="flex border-b border-surface-border bg-surface px-6 pt-2 gap-2 shrink-0">
           <button
             onClick={() => setActiveTab("settings")}
             className={`pb-3 px-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
@@ -213,37 +202,29 @@ export function SettingsModal({
             /* TAB 1: SETTINGS */
             <form onSubmit={handleSaveSettings} className="space-y-4">
               {loadingSettings ? (
-                <div className="text-center py-8 text-text-muted">جاري تحميل الإعدادات...</div>
+                <LoadingState text="جاري تحميل الإعدادات..." />
               ) : (
                 <>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-text-main">
-                      اسم المشرفة (يظهر في مقدمة التقارير)
-                    </label>
-                    <input
-                      type="text"
+                    <InputField
+                      label="اسم المشرفة (يظهر في مقدمة التقارير)"
+                      name="supervisorName"
                       value={settings.supervisorName}
-                      onChange={(e) =>
-                        setSettings({ ...settings, supervisorName: e.target.value })
-                      }
+                      onChange={(e) => setSettings({ ...settings, supervisorName: e.target.value })}
                       placeholder="مثال: امل طاهر"
-                      className="w-full px-4 py-2.5 rounded-xl border border-surface-border bg-surface-hover/30 text-sm focus:outline-hidden focus:border-primary"
                       required
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-text-main">
-                      مقدمة رسالة الواتساب (الدعاء والبسملة)
-                    </label>
-                    <textarea
-                      rows={5}
+                    <TextareaField
+                      label="مقدمة رسالة الواتساب (الدعاء والبسملة)"
+                      name="introText"
                       value={settings.introText || ""}
-                      onChange={(e) =>
-                        setSettings({ ...settings, introText: e.target.value })
-                      }
+                      onChange={(e) => setSettings({ ...settings, introText: e.target.value })}
                       placeholder="التقرير الأسبوعي والشهري&#10;‏﷽&#10;۝ إِنَّ اللَّهَ وَمَلائِكَتَهُ يُصَلُّونَ عَلَى النَّبِيِّ..."
-                      className="w-full px-4 py-2.5 rounded-xl border border-surface-border bg-surface-hover/30 text-sm font-arabic focus:outline-hidden focus:border-primary leading-relaxed"
+                      rows={5}
+                      className="font-arabic leading-relaxed"
                     />
                     <p className="text-[11px] text-text-muted">
                       هذا النص يظهر في أول الرسالة مباشرة قبل أسماء الطالبات.
@@ -251,40 +232,33 @@ export function SettingsModal({
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-text-main">
-                      خاتمة رسالة الواتساب
-                    </label>
-                    <textarea
-                      rows={3}
+                    <TextareaField
+                      label="خاتمة رسالة الواتساب"
+                      name="outroText"
                       value={settings.outroText || ""}
-                      onChange={(e) =>
-                        setSettings({ ...settings, outroText: e.target.value })
-                      }
+                      onChange={(e) => setSettings({ ...settings, outroText: e.target.value })}
                       placeholder="جزاكم الله خيراً وبارك في همتكم العالية..."
-                      className="w-full px-4 py-2.5 rounded-xl border border-surface-border bg-surface-hover/30 text-sm font-arabic focus:outline-hidden focus:border-primary"
+                      rows={3}
+                      className="font-arabic"
                     />
                   </div>
 
-                  <div className="pt-2 flex items-center justify-between">
-                    <button
+                  <div className="pt-2 flex items-center justify-end">
+                    <Button
                       type="submit"
                       disabled={savingSettings}
-                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold shadow-md hover:bg-primary-hover transition-colors disabled:opacity-50 cursor-pointer"
+                      iconLeft={savingSettings ? undefined : <LuSave className="w-4 h-4" />}
+                      loading={savingSettings}
                     >
-                      {savingSettings ? (
-                        <span>جاري الحفظ...</span>
-                      ) : saveSuccess ? (
+                      {saveSuccess ? (
                         <>
                           <LuCheck className="w-4 h-4 text-emerald-300" />
                           <span>تم الحفظ بنجاح!</span>
                         </>
                       ) : (
-                        <>
-                          <LuSave className="w-4 h-4" />
-                          <span>حفظ الإعدادات</span>
-                        </>
+                        "حفظ الإعدادات"
                       )}
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -303,7 +277,7 @@ export function SettingsModal({
                 </div>
 
                 {holidayError && (
-                  <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-medium">
+                  <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-medium">
                     {holidayError}
                   </div>
                 )}
@@ -318,49 +292,48 @@ export function SettingsModal({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-text-main">سبب الإجازة (اختياري)</label>
-                    <input
-                      type="text"
+                    <InputField
+                      label="سبب الإجازة (اختياري)"
+                      name="reason"
                       value={newReason}
                       onChange={(e) => setNewReason(e.target.value)}
                       placeholder="مثال: إجازة عيد الفطر، ظروف طارئة..."
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border bg-surface text-sm focus:outline-hidden focus:border-primary"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-text-main">من تاريخ *</label>
-                    <input
+                    <InputField
+                      label="من تاريخ"
+                      name="from"
                       type="date"
                       value={newFrom}
                       onChange={(e) => setNewFrom(e.target.value)}
                       required
-                      className="w-full px-3.5 py-2 rounded-xl border border-surface-border bg-surface text-sm focus:outline-hidden focus:border-primary"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-text-main">إلى تاريخ *</label>
-                    <input
+                    <InputField
+                      label="إلى تاريخ"
+                      name="to"
                       type="date"
                       value={newTo}
                       onChange={(e) => setNewTo(e.target.value)}
                       required
-                      className="w-full px-3.5 py-2 rounded-xl border border-surface-border bg-surface text-sm focus:outline-hidden focus:border-primary"
                     />
                   </div>
                 </div>
 
                 <div className="pt-1 flex justify-end">
-                  <button
+                  <Button
                     type="submit"
                     disabled={addingHoliday}
-                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-white text-xs sm:text-sm font-bold shadow-xs hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
+                    iconLeft={<LuPlus className="w-4 h-4" />}
+                    loading={addingHoliday}
                   >
-                    <LuPlus className="w-4 h-4" />
-                    <span>{addingHoliday ? "جاري الإضافة..." : "حفظ الإجازة"}</span>
-                  </button>
+                    {addingHoliday ? "جاري الإضافة..." : "حفظ الإجازة"}
+                  </Button>
                 </div>
               </form>
 
@@ -371,7 +344,7 @@ export function SettingsModal({
                 </h4>
 
                 {loadingHolidays ? (
-                  <div className="text-center py-6 text-xs text-text-muted">جاري تحميل الإجازات...</div>
+                  <LoadingState text="جاري تحميل الإجازات..." size="md" className="py-6" />
                 ) : holidays.length === 0 ? (
                   <div className="text-center py-8 rounded-2xl border border-dashed border-surface-border text-xs text-text-muted">
                     لا توجد أي إجازات مسجلة حالياً.
@@ -382,7 +355,7 @@ export function SettingsModal({
                       const circleName =
                         typeof h.circleId === "object" && h.circleId !== null
                           ? h.circleId.name
-                          : circles.find((c) => c._id === h.circleId)?.name || "جميع الحلقات (عامة)";
+                          : safeCircles.find((c: any) => c._id === h.circleId)?.name || "جميع الحلقات (عامة)";
 
                       return (
                         <div
@@ -412,7 +385,8 @@ export function SettingsModal({
                             </p>
                           </div>
                           <button
-                            onClick={() => handleDeleteHoliday(h._id)}
+                            type="button"
+                            onClick={() => setHolidayToDelete(h)}
                             className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
                             title="حذف الإجازة"
                           >
@@ -428,6 +402,17 @@ export function SettingsModal({
           )}
         </div>
       </div>
-    </div>
+
+      {/* Delete Holiday Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={Boolean(holidayToDelete)}
+        onClose={() => setHolidayToDelete(null)}
+        onConfirm={handleConfirmDeleteHoliday}
+        title="تأكيد حذف الإجازة"
+        message={`هل أنتِ متأكدة من حذف الإجازة (${holidayToDelete?.from || ""} إلى ${holidayToDelete?.to || ""})؟`}
+        confirmText="نعم، حذف الإجازة"
+        loading={deletingHoliday}
+      />
+    </Dialog>
   );
 }

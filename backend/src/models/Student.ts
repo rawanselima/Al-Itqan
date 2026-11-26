@@ -8,6 +8,7 @@ export interface IStudent extends Document {
   joinedAt: string; // YYYY-MM-DD
   leftAt?: string | null; // YYYY-MM-DD أو null
   warningForRemoval: boolean; // علامة تحذير بالحذف ⚠️
+  deletedAt?: Date | null; // Soft delete timestamp
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,8 +25,24 @@ const StudentSchema = new Schema<IStudent>(
     },
     leftAt: { type: String, default: null },
     warningForRemoval: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
+
+// Indexes for common queries
+StudentSchema.index({ circleId: 1, isActive: 1, name: 1 }); // For listing active students in a circle
+StudentSchema.index({ circleId: 1, isActive: 1 }); // For count queries
+StudentSchema.index({ name: 'text', phone: 'text' }); // For search
+StudentSchema.index({ deletedAt: 1 }); // For soft delete queries
+
+// Virtual for checking if student is soft deleted
+StudentSchema.virtual('isDeleted').get(function () {
+  return this.deletedAt !== null;
+});
+
+// Ensure virtuals are included in JSON
+StudentSchema.set('toJSON', { virtuals: true });
+StudentSchema.set('toObject', { virtuals: true });
 
 export default mongoose.model<IStudent>('Student', StudentSchema);

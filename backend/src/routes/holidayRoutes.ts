@@ -1,12 +1,20 @@
 import { Router, Request, Response } from 'express';
 import Holiday from '../models/Holiday';
 import AttendanceSession from '../models/AttendanceSession';
+import { validate, asyncHandler } from '../middleware';
+import {
+  holidayCreateSchema,
+  holidayParamsSchema,
+  holidayQuerySchema,
+} from '../schemas';
 
 const router = Router();
 
 // GET all holidays (optionally filtered by circleId)
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get(
+  '/',
+  validate({ query: holidayQuerySchema.shape.query }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { circleId } = req.query;
     let query: any = {};
 
@@ -19,29 +27,15 @@ router.get('/', async (req: Request, res: Response) => {
 
     const holidays = await Holiday.find(query).populate('circleId', 'name').sort({ from: 1 });
     res.json(holidays);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 // POST create holiday
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/',
+  validate({ body: holidayCreateSchema.shape.body }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { circleId, from, to, reason } = req.body;
-
-    if (!from || !to) {
-      return res.status(400).json({ error: 'تاريخ البداية (from) وتاريخ النهاية (to) حقول مطلوبة' });
-    }
-
-    // تحقق من صيغة التاريخ YYYY-MM-DD
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(from) || !dateRegex.test(to)) {
-      return res.status(400).json({ error: 'صيغة التاريخ يجب أن تكون YYYY-MM-DD' });
-    }
-
-    if (from > to) {
-      return res.status(400).json({ error: 'تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية' });
-    }
 
     const newHoliday = new Holiday({
       circleId: circleId || null,
@@ -52,7 +46,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const saved = await newHoliday.save();
 
-    // تحديث الجلسات المسجلة في نفس الفترة الزمنية لتصبح إجازة تلقائياً
+    // Update existing attendance sessions in the same date range to mark as holiday
     const sessionFilter: any = {
       date: { $gte: from, $lte: to },
     };
@@ -63,14 +57,14 @@ router.post('/', async (req: Request, res: Response) => {
 
     const populated = await Holiday.findById(saved._id).populate('circleId', 'name');
     res.status(201).json(populated);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 // DELETE holiday
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete(
+  '/:id',
+  validate({ params: holidayParamsSchema.shape.params }),
+  asyncHandler(async (req: Request, res: Response) => {
     const holiday = await Holiday.findById(req.params.id);
     if (!holiday) {
       return res.status(404).json({ error: 'الإجازة غير موجودة' });
@@ -78,13 +72,14 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     await Holiday.findByIdAndDelete(req.params.id);
 
-    // إعادة فحص الجلسات في نطاق الإجازة المحذوفة لإلغاء الإجازة إذا لم تعد مشمولة بأي عطلة أخرى
+    // Re-check affected attendance sessions to remove holiday flag if no other holiday covers them
     const sessionFilter: any = {
       date: { $gte: holiday.from, $lte: holiday.to },
     };
     if (holiday.circleId) {
       sessionFilter.circleId = holiday.circleId;
     }
+
     const affectedSessions = await AttendanceSession.find(sessionFilter);
     for (const sess of affectedSessions) {
       const remainingHoliday = await Holiday.findOne({
@@ -99,9 +94,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     res.json({ message: 'تم حذف الإجازة بنجاح' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 export default router;

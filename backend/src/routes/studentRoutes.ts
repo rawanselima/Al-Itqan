@@ -1,19 +1,26 @@
 import { Router, Request, Response } from 'express';
 import Student from '../models/Student';
 import Circle from '../models/Circle';
+import { validate, asyncHandler } from '../middleware';
+import {
+  studentCreateSchema,
+  studentUpdateSchema,
+  studentQuerySchema,
+  studentParamsSchema,
+} from '../schemas';
 
 const router = Router();
 
-// GET students (optional filter by circleId or search)
-router.get('/', async (req: Request, res: Response) => {
-  try {
-    const { circleId, search } = req.query;
+// GET students with pagination, filtering, and search
+router.get(
+  '/',
+  validate({ query: studentQuerySchema.shape.query }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { circleId, search, isActive = true, page = 1, limit = 50 } = req.query;
     const filter: any = {};
 
-    if (circleId) {
-      filter.circleId = circleId;
-    }
-
+    if (circleId) filter.circleId = circleId;
+    if (isActive !== undefined) filter.isActive = Boolean(isActive);
     if (search) {
       filter.$or = [
         { name: { $regex: String(search), $options: 'i' } },
@@ -21,23 +28,42 @@ router.get('/', async (req: Request, res: Response) => {
       ];
     }
 
-    const students = await Student.find(filter)
-      .populate('circleId', 'name days time')
-      .sort({ name: 1 });
+    // Exclude soft-deleted students unless explicitly requested
+    if (!filter.deletedAt) {
+      filter.$or = [
+        { deletedAt: null },
+        { deletedAt: { $exists: false } }
+      ];
+    }
 
-    res.json(students);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = Math.min(parseInt(limit as string, 10), 100);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [students, total] = await Promise.all([
+      Student.find(filter)
+        .populate('circleId', 'name days time')
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limitNum),
+      Student.countDocuments(filter),
+    ]);
+
+    const pages = Math.ceil(total / limitNum);
+
+    res.json({
+      students,
+      pagination: { page: pageNum, limit: limitNum, total, pages },
+    });
+  })
+);
 
 // POST create student
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/',
+  validate({ body: studentCreateSchema.shape.body }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { name, phone, circleId, joinedAt, leftAt, warningForRemoval } = req.body;
-    if (!name || !circleId) {
-      return res.status(400).json({ error: 'اسم الطالبة والحلقة حقول مطلوبة' });
-    }
 
     // Verify circle exists
     const circle = await Circle.findById(circleId);
@@ -56,21 +82,29 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     const saved = await newStudent.save();
-    const populated = await Student.findById(saved._id).populate('circleId', 'name');
+    const populated = await Student.findById(saved._id).populate('circleId', 'name days time');
     res.status(201).json(populated);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 // PUT update student
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put(
+  '/:id',
+  validate({ params: studentParamsSchema.shape.params, body: studentUpdateSchema.shape.body }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { name, phone, circleId, isActive, joinedAt, leftAt, warningForRemoval } = req.body;
     const updateObj: any = {};
+
     if (name !== undefined) updateObj.name = name;
     if (phone !== undefined) updateObj.phone = phone;
-    if (circleId !== undefined) updateObj.circleId = circleId;
+    if (circleId !== undefined) {
+      // Verify new circle exists
+      const circle = await Circle.findById(circleId);
+      if (!circle) {
+        return res.status(404).json({ error: 'الحلقة المحددة غير موجودة' });
+      }
+      updateObj.circleId = circleId;
+    }
     if (isActive !== undefined) updateObj.isActive = isActive;
     if (joinedAt !== undefined) updateObj.joinedAt = joinedAt;
     if (leftAt !== undefined) updateObj.leftAt = leftAt;
@@ -80,28 +114,31 @@ router.put('/:id', async (req: Request, res: Response) => {
       req.params.id,
       updateObj,
       { new: true, runValidators: true }
-    ).populate('circleId', 'name');
+    ).populate('circleId', 'name days time');
 
     if (!updated) {
       return res.status(404).json({ error: 'الطالبة غير موجودة' });
     }
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
-// DELETE student
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const deleted = await Student.findByIdAndDelete(req.params.id);
-    if (!deleted) {
+// DELETE student (soft delete)
+router.delete(
+  '/:id',
+  validate({ params: studentParamsSchema.shape.params }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await Student.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isActive: false, deletedAt: new Date() } },
+      { new: true }
+    );
+
+    if (!updated) {
       return res.status(404).json({ error: 'الطالبة غير موجودة' });
     }
-    res.json({ message: 'تم حذف الطالبة بنجاح' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    res.json({ message: 'تم تعطيل الطالبة بنجاح (حذف ناعم)' });
+  })
+);
 
 export default router;

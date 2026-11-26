@@ -58,7 +58,13 @@ export default function Sidebar() {
   const [circles, setCircles] = useState<Circle[]>([]);
 
   useEffect(() => {
-    api.getCircles().then(setCircles).catch(() => {});
+    api
+      .getCircles()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as any)?.circles || [];
+        setCircles(list);
+      })
+      .catch(() => {});
   }, []);
 
   // Close drawer automatically on route navigation

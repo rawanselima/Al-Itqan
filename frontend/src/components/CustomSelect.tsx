@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { LuChevronDown, LuCheck } from "react-icons/lu";
 
@@ -52,7 +52,6 @@ interface CustomSelectProps<T = string | number> {
   triggerClassName?: string;
   menuClassName?: string;
   variant?: "default" | "status" | "compact";
-  direction?: "auto" | "down" | "up";
   icon?: React.ReactNode;
   "aria-label"?: string;
 }
@@ -67,61 +66,83 @@ export function CustomSelect<T extends string | number>({
   triggerClassName = "",
   menuClassName = "",
   variant = "default",
-  direction = "auto",
   icon,
   "aria-label": ariaLabel,
 }: CustomSelectProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [menuCoords, setMenuCoords] = useState<{
+  const [isClosing, setIsClosing] = useState(false);
+  const [menuPos, setMenuPos] = useState<{
     top: number;
-    right: number;
+    left: number;
     width: number;
-  } | null>(null);
-
+    placement: "bottom" | "top";
+  }>({ top: 0, left: 0, width: 160, placement: "bottom" });
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedOption = options.find((opt) => opt.value === value);
 
   useEffect(() => {
     setMounted(true);
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+      }
+    };
   }, []);
 
-  // Update fixed position of the floating menu
-  const updateMenuPosition = () => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const estHeight = variant === "status" ? 160 : Math.min(240, options.length * 42 + 20);
-    const spaceBelow = window.innerHeight - rect.bottom;
+  const computeMenuPosition = useCallback(
+    (menuHeight?: number) => {
+      if (!triggerRef.current) return null;
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
 
-    // Prefer downward unless very close to viewport bottom
-    const shouldOpenUpward =
-      direction === "up" ||
-      (direction === "auto" && spaceBelow < estHeight + 10 && rect.top > estHeight);
+      const minWidth = variant === "status" ? 155 : Math.max(triggerRect.width, 180);
+      const menuWidth = Math.min(minWidth, viewportWidth - 32);
 
-    let top = shouldOpenUpward
-      ? rect.top - estHeight - 4
-      : rect.bottom + 4;
+      // Align right edge with trigger right edge in RTL, falling back gracefully within viewport
+      let left = triggerRect.right - menuWidth;
+      if (left + menuWidth > viewportWidth - 16) {
+        left = viewportWidth - menuWidth - 16;
+      }
+      if (left < 16) {
+        left = 16;
+      }
 
-    if (top < 8) top = 8;
+      const estimatedHeight =
+        menuHeight ?? Math.min(Math.max(options.length, 1) * 38 + 16, 256);
+      const spaceBelow = viewportHeight - triggerRect.bottom - 12;
+      const spaceAbove = triggerRect.top - 12;
 
-    // Align with right edge in RTL
-    const right = Math.max(8, window.innerWidth - rect.right);
-    const width = Math.max(variant === "status" ? 140 : 200, rect.width);
+      const shouldFlipUp = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+      const placement: "bottom" | "top" = shouldFlipUp ? "top" : "bottom";
+      const top = shouldFlipUp
+        ? Math.max(12, triggerRect.top - estimatedHeight - 6)
+        : triggerRect.bottom + 6;
 
-    setMenuCoords({
-      top,
-      right,
-      width,
-    });
-  };
+      return { top, left, width: menuWidth, placement };
+    },
+    [options.length, variant]
+  );
+
+  // Refine position synchronously before browser paint using actual rendered menu height
+  useLayoutEffect(() => {
+    if (isOpen && menuRef.current) {
+      const actualHeight = menuRef.current.getBoundingClientRect().height;
+      const refined = computeMenuPosition(actualHeight);
+      if (refined) {
+        setMenuPos(refined);
+      }
+    }
+  }, [isOpen, computeMenuPosition]);
 
   // Click outside & Escape handling
   useEffect(() => {
-    if (!isOpen) return;
-
-    updateMenuPosition();
+    if (!isOpen && !isClosing) return;
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -131,13 +152,13 @@ export function CustomSelect<T extends string | number>({
         menuRef.current &&
         !menuRef.current.contains(target)
       ) {
-        setIsOpen(false);
+        handleClose();
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setIsOpen(false);
+        handleClose();
       }
     };
 
@@ -146,11 +167,11 @@ export function CustomSelect<T extends string | number>({
       if (menuRef.current && menuRef.current.contains(e.target as Node)) {
         return; // Allow scrolling inside the menu itself
       }
-      setIsOpen(false);
+      handleClose();
     };
 
     const handleResize = () => {
-      setIsOpen(false);
+      handleClose();
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -164,19 +185,41 @@ export function CustomSelect<T extends string | number>({
       window.removeEventListener("scroll", handleScroll, true);
       window.removeEventListener("resize", handleResize);
     };
-  }, [isOpen]);
+  }, [isOpen, isClosing]);
+
+  const handleClose = () => {
+    if (disabled || isClosing) return;
+    setIsClosing(true);
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+    }
+    closeTimerRef.current = setTimeout(() => {
+      setIsOpen(false);
+      setIsClosing(false);
+    }, 130); // Match animation duration
+  };
 
   const handleToggle = () => {
     if (disabled) return;
-    if (!isOpen) {
-      updateMenuPosition();
+    if (isOpen) {
+      handleClose();
+    } else {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      const initialPos = computeMenuPosition();
+      if (initialPos) {
+        setMenuPos(initialPos);
+      }
+      setIsClosing(false);
+      setIsOpen(true);
     }
-    setIsOpen((prev) => !prev);
   };
 
   const handleSelect = (val: T) => {
     onChange(val);
-    setIsOpen(false);
+    handleClose();
   };
 
   // 1. STATUS VARIANT (Used for Attendance pills: حاضرة، غائبة، معتذرة، لم يُسجّل)
@@ -196,11 +239,14 @@ export function CustomSelect<T extends string | number>({
         className={`relative inline-block text-right ${className}`}
       >
         <button
+          ref={triggerRef}
           suppressHydrationWarning
           type="button"
           disabled={disabled}
           onClick={handleToggle}
           aria-label={ariaLabel || `الحالة: ${selectedOption?.label || valStr}`}
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
           className={`inline-flex items-center justify-between gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none ${
             color.bg
           } ${color.text} ${color.border} ${
@@ -218,18 +264,27 @@ export function CustomSelect<T extends string | number>({
           />
         </button>
 
-        {isOpen && mounted && menuCoords && typeof document !== "undefined"
+        {(isOpen || isClosing) && mounted && typeof document !== "undefined"
           ? createPortal(
               <div
                 ref={menuRef}
+                dir="rtl"
+                className={`bg-white border border-[#E6E9E2] rounded-2xl shadow-2xl p-1.5 space-y-0.5 ${
+                  isClosing
+                    ? "dropdown-out"
+                    : menuPos.placement === "top"
+                    ? "dropdown-in-up"
+                    : "dropdown-in-down"
+                } ${menuClassName}`}
                 style={{
                   position: "fixed",
-                  top: `${menuCoords.top}px`,
-                  right: `${menuCoords.right}px`,
-                  minWidth: `${menuCoords.width}px`,
+                  top: `${menuPos.top}px`,
+                  left: `${menuPos.left}px`,
+                  width: `${menuPos.width}px`,
                   zIndex: 99999,
                 }}
-                className={`bg-white border border-[#E6E9E2] rounded-2xl shadow-2xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 ${menuClassName}`}
+                role="listbox"
+                aria-label={ariaLabel}
               >
                 {options.map((opt) => {
                   const optColor = DEFAULT_STATUS_COLORS[String(opt.value)] || {
@@ -244,6 +299,8 @@ export function CustomSelect<T extends string | number>({
                     <button
                       key={String(opt.value)}
                       type="button"
+                      role="option"
+                      aria-selected={isSelected}
                       onClick={() => handleSelect(opt.value)}
                       className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer text-right ${
                         isSelected
@@ -274,11 +331,14 @@ export function CustomSelect<T extends string | number>({
       className={`relative inline-block w-full text-right ${className}`}
     >
       <button
+        ref={triggerRef}
         suppressHydrationWarning
         type="button"
         disabled={disabled}
         onClick={handleToggle}
         aria-label={ariaLabel || selectedOption?.label || placeholder}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border border-[#E6E9E2] bg-white text-xs sm:text-sm font-bold text-[#184E3D] hover:border-[#184E3D]/40 transition-all cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#184E3D]/15 ${
           disabled ? "opacity-60 cursor-not-allowed bg-slate-50" : ""
         } ${triggerClassName}`}
@@ -304,18 +364,27 @@ export function CustomSelect<T extends string | number>({
         />
       </button>
 
-      {isOpen && mounted && menuCoords && typeof document !== "undefined"
+      {(isOpen || isClosing) && mounted && typeof document !== "undefined"
         ? createPortal(
             <div
               ref={menuRef}
+              dir="rtl"
+              className={`max-h-64 overflow-y-auto bg-white border border-[#E6E9E2] rounded-2xl shadow-2xl p-1.5 space-y-0.5 ${
+                isClosing
+                  ? "dropdown-out"
+                  : menuPos.placement === "top"
+                  ? "dropdown-in-up"
+                  : "dropdown-in-down"
+              } ${menuClassName}`}
               style={{
                 position: "fixed",
-                top: `${menuCoords.top}px`,
-                right: `${menuCoords.right}px`,
-                width: `${menuCoords.width}px`,
+                top: `${menuPos.top}px`,
+                left: `${menuPos.left}px`,
+                width: `${menuPos.width}px`,
                 zIndex: 99999,
               }}
-              className={`max-h-64 overflow-y-auto bg-white border border-[#E6E9E2] rounded-2xl shadow-2xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 ${menuClassName}`}
+              role="listbox"
+              aria-label={ariaLabel}
             >
               {options.length === 0 ? (
                 <div className="p-3 text-center text-xs text-[#7C857D]">
@@ -328,6 +397,8 @@ export function CustomSelect<T extends string | number>({
                     <button
                       key={String(opt.value)}
                       type="button"
+                      role="option"
+                      aria-selected={isSelected}
                       onClick={() => handleSelect(opt.value)}
                       className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer text-right ${
                         isSelected

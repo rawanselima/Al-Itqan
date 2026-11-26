@@ -75,8 +75,8 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
     assert.strictEqual(week1.symbols, `${SYMBOLS.done}${SYMBOLS.done}${SYMBOLS.done}`);
   });
 
-  // 4. إجازة 3 أيام في نص الأسبوع: الخانات دي ➖ ومفيش غياب ولا واجب
-  it('Case 4: 3-day mid-week holiday produces ➖ symbols and no warnings', () => {
+  // 4. الإجازات لا تؤثر على الواجبات ولا تظهر في التقرير الشهري إطلاقاً
+  it('Case 4: Holidays do not affect homework symbols and do not appear in report', () => {
     // أسبوع يبدأ السبت 2026-11-07 إلى الخميس 2026-11-12
     // إجازة من الإثنين 2026-11-09 إلى الأربعاء 2026-11-11
     const holidays = [
@@ -86,7 +86,8 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
     const homework = [
       { studentId: 'st1', circleId: 'circle1', date: '2026-11-07', status: 'done' as const },
       { studentId: 'st1', circleId: 'circle1', date: '2026-11-08', status: 'done' as const },
-      // 9, 10, 11 إجازة
+      { studentId: 'st1', circleId: 'circle1', date: '2026-11-09', status: 'done' as const },
+      // 10, 11 لم يُسجّل لهم واجب -> يظهر ❗
       { studentId: 'st1', circleId: 'circle1', date: '2026-11-12', status: 'done' as const },
     ];
 
@@ -101,16 +102,15 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
     });
 
     const week = res.students[0].weeks[0];
-    // السبت✅، الأحد✅، الإثنين➖، الثلاثاء➖، الأربعاء➖، الخميس✅
-    const expected = `${SYMBOLS.done}${SYMBOLS.done}${SYMBOLS.holiday}${SYMBOLS.holiday}${SYMBOLS.holiday}${SYMBOLS.done}`;
+    // الإجازات لا تحول أيام الواجب إلى ➖ ولا تظهر في الرموز المستخدمة
+    const expected = `${SYMBOLS.done}${SYMBOLS.done}${SYMBOLS.done}${SYMBOLS.notDone}${SYMBOLS.notDone}${SYMBOLS.done}`;
     assert.strictEqual(week.symbols, expected);
-    // لا يوجد أي تحذيرات لأن أيام الإجازة ليست نقصاً
+    assert.strictEqual(res.usedSymbols.has(SYMBOLS.holiday), false);
     assert.strictEqual(res.warnings.length, 0);
   });
 
-  // 5. أسبوع كله إجازة: مش موجود في الصفوف ومفيش فجوة في الترقيم
-  it('Case 5: Entire week holiday is omitted completely without gaps in week numbers', () => {
-    // 3 أسابيع: الأسبوع الثاني (من 2026-11-14 إلى 2026-11-19) كله إجازة
+  // 5. أسبوع به إجازة كاملة يظل محسوباً في الواجبات بدون إسقاط أو فجوات
+  it('Case 5: Week during holiday still preserves homework weeks without showing holiday symbols', () => {
     const holidays = [
       { circleId: null, from: '2026-11-14', to: '2026-11-19', reason: 'إجازة أسبوع كامل' },
     ];
@@ -124,14 +124,12 @@ describe('buildReport & renderReportText - 16 Test Cases', () => {
       today: '2026-11-26',
     });
 
-    // كانوا 3 أسابيع، سقط الأسبوع الثاني فتبقى 2 أسابيع
-    assert.strictEqual(res.weeksCount, 2);
+    // تبقى جميع الأسابيع الـ 3 موجودة للواجبات بدون إظهار الإجازة
+    assert.strictEqual(res.weeksCount, 3);
     assert.strictEqual(res.students[0].weeks[0].weekIndex, 1);
-    assert.strictEqual(res.students[0].weeks[0].weekIcon, '1️⃣');
     assert.strictEqual(res.students[0].weeks[1].weekIndex, 2);
-    assert.strictEqual(res.students[0].weeks[1].weekIcon, '2️⃣');
-    // الأسبوع الثاني يبدأ السبت 21 نوفمبر (بعد الأسبوع الملغي)
-    assert.strictEqual(res.students[0].weeks[1].startDate, '2026-11-21');
+    assert.strictEqual(res.students[0].weeks[2].weekIndex, 3);
+    assert.strictEqual(res.usedSymbols.has(SYMBOLS.holiday), false);
   });
 
   // 6. يوم حلقة وقع في إجازة: مش موجود في رموز الحضور

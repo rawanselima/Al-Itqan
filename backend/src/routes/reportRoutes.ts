@@ -8,86 +8,68 @@ import Holiday from '../models/Holiday';
 import Settings from '../models/Settings';
 import { buildReport } from '../utils/buildReport';
 import { renderReportText } from '../utils/renderReportText';
+import { validate, asyncHandler } from '../middleware';
+import {
+  monthlyReportQuerySchema,
+  homeworkReportQuerySchema,
+} from '../schemas';
 
 const router = Router();
 
-// مخطط التحقق من معلمات التقرير باستخدام Zod
-const homeworkReportQuerySchema = z.object({
-  circleId: z.string().min(1, 'معرف الحلقة مطلوب'),
-  year: z.union([z.string(), z.number()]).optional(),
-  month: z.union([z.string(), z.number()]).optional(),
-  from: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'صيغة تاريخ البداية يجب أن تكون YYYY-MM-DD')
-    .optional(),
-  to: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'صيغة تاريخ النهاية يجب أن تكون YYYY-MM-DD')
-    .optional(),
-});
+// Helper to get formatted date string YYYY-MM-DD
+function formatDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
-// GET /api/reports/homework
-// نقطة النهاية لتوليد تقرير الواجبات والحضور الشهري
-router.get('/homework', async (req: Request, res: Response) => {
-  try {
-    // 1. التحقق من المدخلات باستخدام Zod
-    const parseResult = homeworkReportQuerySchema.safeParse(req.query);
-    if (!parseResult.success) {
-      return res.status(400).json({
-        error: parseResult.error.issues?.[0]?.message || 'بيانات الاستعلام غير صالحة',
-      });
-    }
+// GET /api/reports/homework - Monthly homework & attendance report for WhatsApp
+router.get(
+  '/homework',
+  validate({ query: homeworkReportQuerySchema.shape.query }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { circleId } = req.query;
+    let { from, to, year, month } = req.query;
 
-    const { circleId } = parseResult.data;
-    let { from, to, year, month } = parseResult.data;
-
-    // 2. إذا تم تمرير year و month، يتم حساب نطاق الشهر بالكامل
+    // If year and month provided, calculate full month range
     if (year && month) {
       const y = parseInt(String(year), 10);
       const m = parseInt(String(month), 10);
       from = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10);
       to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
     } else if (!from || !to) {
-      // الافتراض على الشهر الحالي بالكامل
+      // Default to current month
       const now = new Date();
       const y = now.getFullYear();
-      const m = now.getMonth(); // 0-indexed
+      const m = now.getMonth();
       from = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
       to = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
     }
 
-    if (from > to) {
+    if (String(from) > String(to)) {
       return res.status(400).json({ error: 'تاريخ البداية (from) لا يمكن أن يكون بعد تاريخ النهاية (to)' });
     }
 
-    // 3. استعلام بيانات الحلقة
+    // Fetch circle data
     const circle = await Circle.findById(circleId).lean();
     if (!circle) {
       return res.status(404).json({ error: 'الحلقة المطلوبة غير موجودة' });
     }
 
-    // 4. استعلامات موازية (Single query per collection)
-    // نجلب فقط ما نحتاجه للفترة المحددة لتوفير الموارد
+    // Parallel queries for performance
     const [students, sessions, homework, holidays, settings] = await Promise.all([
-      Student.find({ circleId, isActive: true }).sort({ name: 1 }).lean(),
-      AttendanceSession.find({
-        circleId,
-        date: { $gte: from, $lte: to },
-      }).lean(),
-      HomeworkRecord.find({
-        circleId,
-        date: { $gte: from, $lte: to },
-      }).lean(),
-      Holiday.find({
-        $or: [{ circleId: null }, { circleId }],
-      }).lean(),
+      Student.find({ circleId, isActive: true, deletedAt: null }).sort({ name: 1 }).lean(),
+      AttendanceSession.find({ circleId, date: { $gte: from, $lte: to } }).lean(),
+      HomeworkRecord.find({ circleId, date: { $gte: from, $lte: to } }).lean(),
+      Holiday.find({ $or: [{ circleId: null }, { circleId }] }).lean(),
       Settings.findOne().lean(),
     ]);
 
-    // 5. استدعاء الدالة النقية buildReport
+    // Build report using pure function
     const report = buildReport({
-      from,
-      to,
+      from: String(from),
+      to: String(to),
       circle: {
         _id: String(circle._id),
         name: circle.name,
@@ -130,46 +112,31 @@ router.get('/homework', async (req: Request, res: Response) => {
       today: new Date().toISOString().slice(0, 10),
     });
 
-    // 6. استدعاء الدالة النقية renderReportText لتوليد نص الواتساب الجاهز
+    // Generate WhatsApp-ready text (بدون عرض الإجازات في التقرير الشهري)
     const text = renderReportText(report, {
       supervisorName: settings?.supervisorName || 'امل طاهر',
       introText: settings?.introText,
       outroText: settings?.outroText,
+      circleName: circle.name,
     });
 
-    // 7. إرجاع النتيجة
     res.json({
       report: {
         ...report,
-        usedSymbols: Array.from(report.usedSymbols), // تحويل Set إلى Array لتتوافق مع JSON
+        usedSymbols: Array.from(report.usedSymbols), // Convert Set to Array for JSON
       },
       warnings: report.warnings,
       text,
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'حدث خطأ في الخادم أثناء توليد التقرير' });
-  }
-});
+  })
+);
 
-// Helper to get formatted date string YYYY-MM-DD
-function formatDate(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-// GET monthly report for a circle
-// Returns summary per student divided into 4-5 weeks:
-// - Attendance breakdown per week (present, absent, excused)
-// - Homework breakdown per week (days completed out of 6 Saturday..Thursday)
-router.get('/monthly', async (req: Request, res: Response) => {
-  try {
+// GET monthly report for a circle - divided into calendar weeks
+router.get(
+  '/monthly',
+  validate({ query: monthlyReportQuerySchema.shape.query }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { circleId, year, month } = req.query;
-    if (!circleId || !year || !month) {
-      return res.status(400).json({ error: 'circleId و year و month حقول مطلوبة' });
-    }
-
     const y = parseInt(String(year), 10);
     const m = parseInt(String(month), 10); // 1-indexed (1 = January)
 
@@ -178,29 +145,40 @@ router.get('/monthly', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'الحلقة غير موجودة' });
     }
 
-    const students = await Student.find({ circleId, isActive: true }).sort({ name: 1 });
+    const students = await Student.find({ circleId, isActive: true, deletedAt: null }).sort({ name: 1 });
 
-    // Calculate dates of the month using UTC
+    // Calculate month boundaries using UTC
     const firstDay = new Date(Date.UTC(y, m - 1, 1));
     const lastDay = new Date(Date.UTC(y, m, 0));
 
     const startMonthStr = firstDay.toISOString().slice(0, 10);
     const endMonthStr = lastDay.toISOString().slice(0, 10);
 
-    // Fetch all attendance sessions in the month
-    const attendanceSessions = await AttendanceSession.find({
-      circleId,
-      date: { $gte: startMonthStr, $lte: endMonthStr },
-    });
+    // Fetch all attendance sessions, homework records, and holidays in parallel
+    const [rawAttendanceSessions, homeworkRecords, holidays] = await Promise.all([
+      AttendanceSession.find({
+        circleId,
+        date: { $gte: startMonthStr, $lte: endMonthStr },
+      }),
+      HomeworkRecord.find({
+        circleId,
+        date: { $gte: startMonthStr, $lte: endMonthStr },
+      }),
+      Holiday.find({
+        $or: [{ circleId: null }, { circleId }],
+      }).lean(),
+    ]);
 
-    // Fetch all homework records in the month
-    const homeworkRecords = await HomeworkRecord.find({
-      circleId,
-      date: { $gte: startMonthStr, $lte: endMonthStr },
-    });
+    // استبعاد جلسات الإجازات تماماً من التقرير الشهري حتى لا تُحسب ولا تظهر
+    const isHolidayDay = (dateStr: string) =>
+      holidays.some((h: any) => dateStr >= h.from && dateStr <= h.to);
 
-    // تقسيم الشهر إلى أسابيع تقويمية فعلية تبدأ من السبت وتستبعد الجمعة، ومحصورة بدقة داخل الشهر
-    // الأيام التي تقع خارج الشهر (مثل 31 أكتوبر في بداية نوفمبر) لا تظهر نهائياً
+    const attendanceSessions = rawAttendanceSessions.filter(
+      (session) => !session.isHoliday && !isHolidayDay(session.date)
+    );
+
+    // Divide month into actual calendar weeks (Saturday to Thursday, no Friday)
+    // Weeks are strictly contained within the month (no spillover from adjacent months)
     const rawWeeksMap = new Map<string, Array<{ dateStr: string; dayOfWeek: number }>>();
     const satKeysOrder: string[] = [];
 
@@ -209,9 +187,9 @@ router.get('/monthly', async (req: Request, res: Response) => {
 
     while (curDate <= endDateObj) {
       const dayOfWeek = curDate.getUTCDay();
-      // استبعاد الجمعة (5)
+      // Exclude Friday (5)
       if (dayOfWeek !== 5) {
-        // حساب السبت الخاص بهذا الأسبوع
+        // Calculate Saturday of this week
         const diff = dayOfWeek === 6 ? 0 : -(dayOfWeek + 1);
         const satDate = new Date(Date.UTC(curDate.getUTCFullYear(), curDate.getUTCMonth(), curDate.getUTCDate() + diff));
         const satKey = satDate.toISOString().slice(0, 10);
@@ -259,7 +237,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
       let totalRecited = 0;
       let totalHomeworkDays = 0;
 
-      // Extract attendance history across all sessions in the month
+      // Attendance history across all sessions
       const attendanceHistory = attendanceSessions
         .filter((session) => !session.isHoliday)
         .map((session) => {
@@ -271,9 +249,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
         });
 
       const weeklyDetails: any[] = [];
-
       const weeklyStats = weeks.map((week) => {
-        // Attendance in this week
         let weekPresent = 0;
         let weekAbsent = 0;
         let weekExcused = 0;
@@ -295,7 +271,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
           }
         });
 
-        // أيام الواجب المحصورة بدقة داخل هذا الشهر (باستثناء الجمعة وأيام الشهور الأخرى)
+        // Homework days strictly within this month (excluding Friday and adjacent month days)
         const weekDays: Array<{ date: string; completed: boolean | null }> = [];
         for (const dateStr of week.days) {
           if (dateStr > todayStr) {
@@ -315,9 +291,9 @@ router.get('/monthly', async (req: Request, res: Response) => {
         let badge: 'medal' | 'trophy' | null = null;
         if (pastDays.length > 0 && completedDays === pastDays.length) {
           if (weekAbsent === 0 && weekExcused === 0 && weekPresent > 0) {
-            badge = 'medal'; // 🏅 اتمتت المهام والحضور
+            badge = 'medal'; // 🏅 Completed tasks and attendance
           } else {
-            badge = 'trophy'; // 🏆 اتمتت عمل المهام
+            badge = 'trophy'; // 🏆 Completed tasks
           }
         }
 
@@ -388,9 +364,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
       weeks,
       students: studentReports,
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 export default router;

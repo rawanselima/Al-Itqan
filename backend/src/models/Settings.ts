@@ -25,4 +25,7 @@ const SettingsSchema = new Schema<ISettings>(
   { timestamps: true }
 );
 
+// Ensure only one settings document exists
+SettingsSchema.index({}, { unique: true });
+
 export default mongoose.model<ISettings>('Settings', SettingsSchema);

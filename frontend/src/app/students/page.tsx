@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, Circle, formatCircleDays } from "@/lib/api";
+import { useState, useEffect, useMemo } from "react";
+import { useStudents, useCircles } from "@/hooks";
+import { studentSchema, type StudentFormData } from "@/lib/schemas";
+import { Button, InputField, SelectField, ModalForm, LoadingState, ConfirmDialog } from "@/components/ui";
 import { CustomSelect } from "@/components/CustomSelect";
 import {
   LuUserPlus,
@@ -9,10 +11,10 @@ import {
   LuGraduationCap,
   LuPencil,
   LuTrash2,
-  LuX,
   LuBookOpen,
 } from "react-icons/lu";
 import { FaWhatsapp } from "react-icons/fa6";
+import { formatCircleDays } from "@/lib/api";
 
 interface Student {
   _id: string;
@@ -31,134 +33,83 @@ interface Student {
 }
 
 export default function StudentsPage() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [circles, setCircles] = useState<Circle[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    circles,
+    isLoading: circlesLoading,
+  } = useCircles();
 
-  // Filters
   const [selectedCircleId, setSelectedCircleId] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
-
-  // Form State
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [circleId, setCircleId] = useState("");
-  const [joinedAt, setJoinedAt] = useState("");
-  const [warningForRemoval, setWarningForRemoval] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [circlesData, studentsData] = await Promise.all([
-        api.getCircles(),
-        api.getStudents({
-          circleId: selectedCircleId || undefined,
-          search: search || undefined,
-        }),
-      ]);
-      setCircles(circlesData);
-      setStudents(studentsData);
-    } catch (err: any) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Debounce search
   useEffect(() => {
-    loadData();
-  }, [selectedCircleId, search]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const {
+    students,
+    isLoading,
+    createStudent,
+    updateStudent,
+    deleteStudent,
+    toggleWarning,
+    isCreating,
+    isUpdating,
+    isDeleting,
+    isTogglingWarning,
+  } = useStudents({
+    circleId: selectedCircleId || undefined,
+    search: debouncedSearch || undefined,
+  });
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<StudentFormData | null>(null);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
 
   const openAddModal = () => {
-    setEditingStudent(null);
-    setName("");
-    setPhone("");
-    setCircleId(selectedCircleId || (circles[0]?._id ?? ""));
-    setJoinedAt(new Date().toISOString().slice(0, 10));
-    setWarningForRemoval(false);
-    setError("");
+    setEditingStudent({
+      name: "",
+      phone: "",
+      circleId: selectedCircleId || (circles[0]?._id ?? ""),
+    });
     setIsModalOpen(true);
   };
 
   const openEditModal = (student: Student) => {
-    setEditingStudent(student);
-    setName(student.name);
-    setPhone(student.phone || "");
-    setCircleId(student.circleId?._id || "");
-    setJoinedAt(student.joinedAt || new Date().toISOString().slice(0, 10));
-    setWarningForRemoval(Boolean(student.warningForRemoval));
-    setError("");
+    setEditingStudent({
+      _id: student._id,
+      name: student.name,
+      phone: student.phone || "",
+      circleId: student.circleId?._id || "",
+    });
     setIsModalOpen(true);
   };
 
+  const handleSave = async (data: StudentFormData) => {
+    if (editingStudent?._id) {
+      await updateStudent({ id: editingStudent._id, data: data as any });
+    } else {
+      await createStudent({
+        ...data,
+        joinedAt: new Date().toISOString().slice(0, 10),
+        warningForRemoval: false,
+      });
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!studentToDelete) return;
+    await deleteStudent(studentToDelete._id);
+    setStudentToDelete(null);
+  };
+
   const handleToggleWarning = async (student: Student) => {
-    try {
-      const newVal = !student.warningForRemoval;
-      await api.updateStudent(student._id, { warningForRemoval: newVal });
-      setStudents((prev) =>
-        prev.map((s) => (s._id === student._id ? { ...s, warningForRemoval: newVal } : s))
-      );
-    } catch {
-      alert("فشل تحديث علامة التحذير بالحذف");
-    }
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) {
-      setError("يرجى إدخال اسم الطالبة");
-      return;
-    }
-    if (!circleId) {
-      setError("يرجى اختيار الحلقة الخاصة بالطالبة");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setError("");
-      if (editingStudent) {
-        await api.updateStudent(editingStudent._id, {
-          name,
-          phone,
-          circleId,
-          joinedAt,
-          warningForRemoval,
-        });
-      } else {
-        await api.createStudent({
-          name,
-          phone,
-          circleId,
-          joinedAt,
-          warningForRemoval,
-        });
-      }
-      setIsModalOpen(false);
-      await loadData();
-    } catch (err: any) {
-      setError(err.message || "حدث خطأ أثناء حفظ الطالبة");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (student: Student) => {
-    if (!confirm(`هل أنت متأكد من حذف الطالبة "${student.name}"؟`)) {
-      return;
-    }
-    try {
-      await api.deleteStudent(student._id);
-      await loadData();
-    } catch (err: any) {
-      alert(err.message || "فشل حذف الطالبة");
-    }
+    const newVal = !student.warningForRemoval;
+    await toggleWarning({ id: student._id, warningForRemoval: newVal });
   };
 
   return (
@@ -171,15 +122,14 @@ export default function StudentsPage() {
             تسجيل الطالبات وربطهن بالحلقات وتعديل بياناتهن
           </p>
         </div>
-        <button
-          suppressHydrationWarning
+        <Button
           onClick={openAddModal}
           disabled={circles.length === 0}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-primary text-white font-bold text-sm shadow-md hover:bg-primary-hover transition-all disabled:opacity-50 cursor-pointer"
+          iconLeft={<LuUserPlus className="w-4 h-4" />}
+          size="sm"
         >
-          <LuUserPlus className="w-4 h-4" />
-          <span>إضافة طالبة جديدة</span>
-        </button>
+          إضافة طالبة جديدة
+        </Button>
       </div>
 
       {circles.length === 0 && (
@@ -228,8 +178,8 @@ export default function StudentsPage() {
       </div>
 
       {/* Table of Students */}
-      {loading ? (
-        <div className="p-12 text-center text-text-muted">جاري تحميل بيانات الطالبات...</div>
+      {isLoading ? (
+        <LoadingState text="جاري تحميل بيانات الطالبات..." />
       ) : students.length === 0 ? (
         <div className="p-12 sm:p-16 text-center bg-surface rounded-2xl sm:rounded-3xl border border-dashed border-surface-border space-y-3">
           <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center text-primary mx-auto">
@@ -286,32 +236,38 @@ export default function StudentsPage() {
                       )}
                     </td>
                     <td className="py-3 sm:py-4 px-3 sm:px-6 text-center">
-                      <div className="inline-flex items-center gap-1.5">
+                      <div className="inline-flex items-center justify-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleToggleWarning(student)}
-                          className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${
+                          disabled={isTogglingWarning}
+                          className={`w-8 h-8 rounded-xl inline-flex items-center justify-center transition-all cursor-pointer disabled:opacity-50 ${
                             student.warningForRemoval
-                              ? "bg-amber-100 border-amber-300 text-amber-900"
-                              : "border-surface-border text-text-muted hover:bg-beige"
+                              ? "bg-amber-100 text-amber-600 ring-1 ring-amber-300 hover:bg-amber-200/70"
+                              : "text-amber-500 hover:text-amber-600 hover:bg-amber-50"
                           }`}
                           title={student.warningForRemoval ? "إلغاء التحذير بالحذف" : "وضع تحذير بالحذف ⚠️"}
+                          aria-label={student.warningForRemoval ? "إلغاء التحذير بالحذف" : "وضع تحذير بالحذف"}
                         >
-                          <LuTriangleAlert className="w-3 h-3" />
+                          <LuTriangleAlert className="w-4 h-4" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => openEditModal(student)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg border border-surface-border hover:bg-beige transition-colors cursor-pointer"
+                          className="w-8 h-8 rounded-xl inline-flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+                          title="تعديل الطالبة"
+                          aria-label="تعديل الطالبة"
                         >
-                          <LuPencil className="w-3 h-3" />
-                          <span>تعديل</span>
+                          <LuPencil className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(student)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          type="button"
+                          onClick={() => setStudentToDelete(student)}
+                          className="w-8 h-8 rounded-xl inline-flex items-center justify-center text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-all cursor-pointer"
+                          title="حذف الطالبة"
+                          aria-label="حذف الطالبة"
                         >
-                          <LuTrash2 className="w-3 h-3" />
-                          <span>حذف</span>
+                          <LuTrash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -324,109 +280,64 @@ export default function StudentsPage() {
       )}
 
       {/* Add / Edit Student Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-surface rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-md w-full shadow-2xl border border-surface-border space-y-4 sm:space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-surface-border pb-3 sm:pb-4">
-              <h3 className="text-base sm:text-lg font-bold text-text-main">
-                {editingStudent ? "تعديل بيانات الطالبة" : "تسجيل طالبة جديدة"}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-text-muted hover:text-text-main p-1 cursor-pointer"
-              >
-                <LuX className="w-5 h-5" />
-              </button>
-            </div>
+      <ModalForm<StudentFormData>
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingStudent?._id ? "تعديل بيانات الطالبة" : "تسجيل طالبة جديدة"}
+        schema={studentSchema}
+        defaultValues={editingStudent || undefined}
+        onSubmit={handleSave}
+        submitText="حفظ الطالبة"
+        size="md"
+        showCloseButton={true}
+        loading={isCreating || isUpdating}
+      >
+        {(form) => (
+          <>
+            <InputField
+              name="name"
+              label="اسم الطالبة"
+              placeholder="الاسم ثلاثي أو ثنائي..."
+              control={form.control}
+              required
+            />
 
-            {error && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
-                {error}
-              </div>
-            )}
+            <InputField
+              name="phone"
+              label="رقم الهاتف / الواتساب (اختياري)"
+              type="tel"
+              dir="ltr"
+              placeholder="01xxxxxxxxx"
+              control={form.control}
+            />
 
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">اسم الطالبة *</label>
-                <input
-                  type="text"
-                  placeholder="الاسم ثلاثي أو ثنائي..."
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
-                  required
-                />
-              </div>
+            <SelectField
+              name="circleId"
+              label="الحلقة"
+              placeholder="اختر الحلقة..."
+              options={circles.map((c) => ({
+                value: c._id,
+                label: c.teacherName?.trim() || c.name,
+                badge: formatCircleDays(c.days),
+              }))}
+              icon={<LuBookOpen className="w-4 h-4 text-primary" />}
+              control={form.control}
+              required
+            />
+          </>
+        )}
+      </ModalForm>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">رقم الهاتف / الواتساب</label>
-                <input
-                  type="tel"
-                  dir="ltr"
-                  placeholder="01xxxxxxxxx"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm text-right bg-surface"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">الحلقة *</label>
-                <CustomSelect
-                  placeholder="اختر الحلقة..."
-                  value={circleId}
-                  onChange={(val) => setCircleId(val as string)}
-                  options={circles.map((c) => ({
-                    value: c._id,
-                    label: c.name,
-                    badge: formatCircleDays(c.days),
-                  }))}
-                  icon={<LuBookOpen className="w-4 h-4 text-primary" />}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">تاريخ الانضمام للحلقة</label>
-                <input
-                  type="date"
-                  value={joinedAt}
-                  onChange={(e) => setJoinedAt(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface font-mono"
-                />
-              </div>
-
-              <div className="pt-1">
-                <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-text-main">
-                  <input
-                    type="checkbox"
-                    checked={warningForRemoval}
-                    onChange={(e) => setWarningForRemoval(e.target.checked)}
-                    className="w-4 h-4 rounded text-primary focus:ring-primary border-surface-border cursor-pointer"
-                  />
-                  <span>وضع علامة تحذير بالحذف (⚠️) في التقارير</span>
-                </label>
-              </div>
-
-              <div className="flex gap-2 sm:gap-3 pt-2 sm:pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-surface-border text-text-main font-bold text-xs hover:bg-beige cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 py-2.5 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
-                >
-                  {saving ? "جاري الحفظ..." : "حفظ الطالبة"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={Boolean(studentToDelete)}
+        onClose={() => setStudentToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="تأكيد حذف الطالبة"
+        message={`هل أنتِ متأكدة من حذف الطالبة "${studentToDelete?.name || ""}"؟`}
+        confirmText="نعم، حذف الطالبة"
+        loading={isDeleting}
+      />
     </div>
   );
 }

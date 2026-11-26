@@ -23,6 +23,9 @@ const HolidaySchema = new Schema<IHoliday>(
   { timestamps: true }
 );
 
+// Indexes for efficient holiday lookups
 HolidaySchema.index({ circleId: 1, from: 1, to: 1 });
+HolidaySchema.index({ from: 1, to: 1 }); // For general holiday checks (circleId: null)
+HolidaySchema.index({ circleId: 1 }); // For listing holidays by circle
 
 export default mongoose.model<IHoliday>('Holiday', HolidaySchema);

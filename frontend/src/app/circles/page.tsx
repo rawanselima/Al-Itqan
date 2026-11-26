@@ -1,138 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, Circle, getDayName } from "@/lib/api";
-import { LuPlus, LuBookOpen, LuPencil, LuTrash2, LuX } from "react-icons/lu";
+import { useState } from "react";
+import { useCircles } from "@/hooks";
+import { circleSchema, type CircleFormData } from "@/lib/schemas";
+import { Button, InputField, TextareaField, ModalForm, LoadingState, ConfirmDialog } from "@/components/ui";
+import { LuPlus, LuBookOpen, LuPencil, LuTrash2 } from "react-icons/lu";
 
 const DAYS_OF_WEEK = [
-  "السبت",
-  "الأحد",
-  "الإثنين",
-  "الثلاثاء",
-  "الأربعاء",
-  "الخميس",
-  "الجمعة",
+  "السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة",
 ];
 
 export default function CirclesPage() {
-  const [circles, setCircles] = useState<Circle[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    circles,
+    isLoading,
+    createCircle,
+    updateCircle,
+    deleteCircle,
+    isCreating,
+    isUpdating,
+    isDeleting,
+  } = useCircles();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingCircle, setEditingCircle] = useState<Circle | null>(null);
-
-  // Form State
-  const [name, setName] = useState("");
-  const [teacherName, setTeacherName] = useState("");
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
-  const [time, setTime] = useState("");
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const loadCircles = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getCircles();
-      setCircles(data);
-    } catch (err: any) {
-      setError(err.message || "حدث خطأ في تحميل الحلقات");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadCircles();
-  }, []);
+  const [editingCircle, setEditingCircle] = useState<CircleFormData | null>(null);
+  const [circleToDelete, setCircleToDelete] = useState<{ _id: string; name: string } | null>(null);
 
   const openAddModal = () => {
-    setEditingCircle(null);
-    setName("");
-    setTeacherName("");
-    setSelectedDays(["الإثنين", "الخميس"]);
-    setTime("04:00 م");
-    setNotes("");
-    setError("");
+    setEditingCircle({
+      name: "",
+      teacherName: "",
+      days: ["الإثنين", "الخميس"],
+      time: "04:00 م",
+      notes: "",
+    });
     setIsModalOpen(true);
   };
 
-  const openEditModal = (circle: Circle) => {
-    setEditingCircle(circle);
-    setName(circle.name);
-    setTeacherName(circle.teacherName || "");
-    setSelectedDays(Array.isArray(circle.days) ? circle.days.map(getDayName) : []);
-    setTime(circle.time || "");
-    setNotes(circle.notes || "");
-    setError("");
+  const openEditModal = (circle: CircleFormData) => {
+    const displayName = circle.teacherName?.trim() || circle.name || "";
+    setEditingCircle({
+      ...circle,
+      name: displayName,
+      teacherName: displayName,
+      days: Array.isArray(circle.days) ? circle.days : [],
+      notes: circle.notes || "",
+    });
     setIsModalOpen(true);
   };
 
-  const handleToggleDay = (day: string) => {
-    if (selectedDays.includes(day)) {
-      setSelectedDays(selectedDays.filter((d) => d !== day));
+  const handleSave = async (data: CircleFormData) => {
+    const teacherTitle = data.name.trim();
+    const payload = {
+      ...data,
+      name: teacherTitle,
+      teacherName: teacherTitle,
+    };
+    if (editingCircle?._id) {
+      await updateCircle({ id: editingCircle._id, data: payload });
     } else {
-      setSelectedDays([...selectedDays, day]);
+      await createCircle(payload);
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) {
-      setError("يرجى إدخال اسم الحلقة");
-      return;
-    }
-    if (selectedDays.length === 0) {
-      setError("يرجى اختيار يوم واحد على الأقل للحلقة");
-      return;
-    }
-    if (!time.trim()) {
-      setError("يرجى تحديد وقت الحلقة");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setError("");
-      if (editingCircle) {
-        await api.updateCircle(editingCircle._id, {
-          name,
-          teacherName,
-          days: selectedDays,
-          time,
-          notes,
-        });
-      } else {
-        await api.createCircle({
-          name,
-          teacherName,
-          days: selectedDays,
-          time,
-          notes,
-        });
-      }
-      setIsModalOpen(false);
-      await loadCircles();
-    } catch (err: any) {
-      setError(err.message || "حدث خطأ أثناء الحفظ");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (circle: Circle) => {
-    if (
-      !confirm(
-        `هل أنت متأكد من حذف حلقة "${circle.name}"؟ سيتم أيضاً حذف الطالبات المرتبطات بها.`
-      )
-    ) {
-      return;
-    }
-    try {
-      await api.deleteCircle(circle._id);
-      await loadCircles();
-    } catch (err: any) {
-      alert(err.message || "فشل حذف الحلقة");
-    }
+  const handleConfirmDelete = async () => {
+    if (!circleToDelete) return;
+    await deleteCircle(circleToDelete._id);
+    setCircleToDelete(null);
   };
 
   return (
@@ -145,18 +79,18 @@ export default function CirclesPage() {
             إضافة وتعديل حلقات التحفيظ وتحديد أيام وساعة الانعقاد
           </p>
         </div>
-        <button
+        <Button
           onClick={openAddModal}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-primary text-white font-bold text-sm shadow-md hover:bg-primary-hover transition-all cursor-pointer"
+          iconLeft={<LuPlus className="w-4 h-4" />}
+          size="sm"
         >
-          <LuPlus className="w-4 h-4" />
-          <span>إضافة حلقة جديدة</span>
-        </button>
+          إضافة حلقة جديدة
+        </Button>
       </div>
 
       {/* Content */}
-      {loading ? (
-        <div className="p-12 text-center text-text-muted">جاري تحميل الحلقات...</div>
+      {isLoading ? (
+        <LoadingState text="جاري تحميل الحلقات..." />
       ) : circles.length === 0 ? (
         <div className="p-12 sm:p-16 text-center bg-surface rounded-2xl sm:rounded-3xl border border-dashed border-surface-border space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-primary-light flex items-center justify-center text-primary mx-auto">
@@ -166,12 +100,9 @@ export default function CirclesPage() {
           <p className="text-xs sm:text-sm text-text-muted max-w-sm mx-auto">
             ابدأ بإضافة الحلقة الأولى لتتمكن من تسجيل الطالبات ومتابعة الحضور والواجبات.
           </p>
-          <button
-            onClick={openAddModal}
-            className="px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary-hover cursor-pointer"
-          >
+          <Button onClick={openAddModal} size="sm" iconLeft={<LuPlus className="w-4 h-4" />}>
             إضافة الحلقة الأولى
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -183,14 +114,10 @@ export default function CirclesPage() {
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
                   <div>
+                    <span className="text-[11px] text-text-muted font-bold">المعلمة</span>
                     <h3 className="font-extrabold text-base sm:text-lg text-text-main group-hover:text-primary transition-colors">
-                      {circle.name}
+                      {circle.teacherName?.trim() || circle.name}
                     </h3>
-                    {circle.teacherName && (
-                      <div className="text-xs text-text-muted mt-0.5">
-                        المعلمة: <span className="font-bold text-text-main">{circle.teacherName}</span>
-                      </div>
-                    )}
                   </div>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-primary-light text-primary">
                     {circle.time}
@@ -206,7 +133,7 @@ export default function CirclesPage() {
                         key={String(day)}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-beige text-text-main border border-surface-border"
                       >
-                        {getDayName(day)}
+                        {typeof day === "number" ? DAYS_OF_WEEK[day] : day}
                       </span>
                     ))}
                   </div>
@@ -228,22 +155,29 @@ export default function CirclesPage() {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2 pt-4 mt-4 border-t border-surface-border">
-                <button
-                  onClick={() => openEditModal(circle)}
-                  className="flex-1 py-2 text-xs font-bold rounded-xl border border-surface-border text-text-main hover:bg-beige transition-colors cursor-pointer"
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="flex-1"
+                  onClick={() => openEditModal(circle as any)}
+                  iconLeft={<LuPencil className="w-3.5 h-3.5" />}
                 >
-                  <span className="inline-flex items-center justify-center gap-1.5">
-                    <LuPencil className="w-3.5 h-3.5" />
-                    <span>تعديل</span>
-                  </span>
-                </button>
-                <button
-                  onClick={() => handleDelete(circle)}
-                  className="py-2 px-3 text-xs font-bold rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer flex items-center justify-center"
+                  تعديل
+                </Button>
+                <Button
+                  variant="danger"
+                  size="xs"
+                  onClick={() =>
+                    setCircleToDelete({
+                      _id: circle._id,
+                      name: circle.teacherName?.trim() || circle.name,
+                    })
+                  }
+                  iconLeft={<LuTrash2 className="w-4 h-4" />}
                   title="حذف الحلقة"
                 >
-                  <LuTrash2 className="w-4 h-4" />
-                </button>
+                  حذف
+                </Button>
               </div>
             </div>
           ))}
@@ -251,117 +185,92 @@ export default function CirclesPage() {
       )}
 
       {/* Add / Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-surface rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-md w-full shadow-2xl border border-surface-border space-y-4 sm:space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-surface-border pb-3 sm:pb-4">
-              <h3 className="text-base sm:text-lg font-bold text-text-main">
-                {editingCircle ? "تعديل بيانات الحلقة" : "إضافة حلقة جديدة"}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-text-muted hover:text-text-main p-1 cursor-pointer"
-              >
-                <LuX className="w-5 h-5" />
-              </button>
+      <ModalForm<CircleFormData>
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingCircle?._id ? "تعديل بيانات الحلقة" : "إضافة حلقة جديدة"}
+        schema={circleSchema}
+        defaultValues={editingCircle || undefined}
+        onSubmit={handleSave}
+        submitText="حفظ البيانات"
+        size="md"
+        showCloseButton={true}
+        loading={isCreating || isUpdating}
+      >
+        {(form) => (
+          <>
+            <InputField
+              name="name"
+              label="اسم المعلمة"
+              placeholder="مثال: أ/ سماح أبو الخير"
+              control={form.control}
+              required
+            />
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-text-main">
+                أيام الانعقاد <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                {DAYS_OF_WEEK.map((day) => {
+                  const isSelected = form.watch("days")?.includes(day) || false;
+                  return (
+                    <Button
+                      key={day}
+                      type="button"
+                      variant={isSelected ? "primary" : "outline"}
+                      size="xs"
+                      className="py-2 px-1 text-xs"
+                      onClick={() => {
+                        const currentDays = (form.watch("days") as (string | number)[]) || [];
+                        if (currentDays.includes(day)) {
+                          form.setValue("days", currentDays.filter((d) => d !== day), { shouldValidate: true });
+                        } else {
+                          form.setValue("days", [...currentDays, day], { shouldValidate: true });
+                        }
+                      }}
+                    >
+                      {day}
+                    </Button>
+                  );
+                })}
+              </div>
+              {form.formState.errors.days && (
+                <p className="text-xs text-rose-600 font-bold" role="alert">
+                  • {form.formState.errors.days.message as string}
+                </p>
+              )}
             </div>
 
-            {error && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
-                {error}
-              </div>
-            )}
+            <InputField
+              name="time"
+              label="ساعة وتوقيت الحلقة"
+              placeholder="مثال: 04:30 عصراً أو 05:00 م"
+              control={form.control}
+              required
+            />
 
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">اسم الحلقة *</label>
-                <input
-                  type="text"
-                  placeholder="مثال: حلقة الفردوس، حلقة النور..."
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
-                  required
-                />
-              </div>
+            <TextareaField
+              name="notes"
+              label="ملاحظات (اختياري)"
+              placeholder="أي تفاصيل خاصة بالحلقة أو المستوى..."
+              rows={2}
+              control={form.control}
+            />
+          </>
+        )}
+      </ModalForm>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">اسم المعلمة</label>
-                <input
-                  type="text"
-                  placeholder="مثال: أ/ سماح أبو الخير"
-                  value={teacherName}
-                  onChange={(e) => setTeacherName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-text-main">أيام الانعقاد *</label>
-                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                  {DAYS_OF_WEEK.map((day) => {
-                    const isSelected = selectedDays.includes(day);
-                    return (
-                      <button
-                        type="button"
-                        key={day}
-                        onClick={() => handleToggleDay(day)}
-                        className={`py-2 px-1 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-primary text-white border-primary shadow-xs"
-                            : "bg-beige text-text-main border-surface-border hover:bg-primary-light"
-                        }`}
-                      >
-                        {day}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">ساعة وتوقيت الحلقة *</label>
-                <input
-                  type="text"
-                  placeholder="مثال: 04:30 عصراً أو 05:00 م"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-text-main">ملاحظات (اختياري)</label>
-                <textarea
-                  rows={2}
-                  placeholder="أي تفاصيل خاصة بالحلقة أو المستوى..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-surface-border focus:outline-none focus:border-primary text-sm bg-surface"
-                />
-              </div>
-
-              <div className="flex gap-2 sm:gap-3 pt-2 sm:pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-surface-border text-text-main font-bold text-xs hover:bg-beige cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 py-2.5 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
-                >
-                  {saving ? "جاري الحفظ..." : "حفظ البيانات"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={Boolean(circleToDelete)}
+        onClose={() => setCircleToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="تأكيد حذف الحلقة"
+        message={`هل أنتِ متأكدة من حذف حلقة المعلمة "${circleToDelete?.name || ""}"؟ سيتم تعطيل جميع الطالبات المرتبطات بها.`}
+        confirmText="نعم، حذف الحلقة"
+        loading={isDeleting}
+      />
     </div>
   );
 }

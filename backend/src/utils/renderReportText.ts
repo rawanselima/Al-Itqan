@@ -4,12 +4,14 @@
  * تعرض في قائمة المصطلحات فقط الرموز التي تم استخدامها بالفعل في هذا التقرير.
  */
 
-import { BuiltReportResult, SYMBOLS } from './buildReport';
+import { BuiltReportResult, SYMBOLS, HolidayInput } from './buildReport';
 
 export interface RenderSettingsInput {
   supervisorName?: string;
   introText?: string;
   outroText?: string;
+  holidays?: HolidayInput[];
+  circleName?: string;
 }
 
 const DEFAULT_INTRO = `التقرير الأسبوعي والشهري
@@ -30,7 +32,6 @@ const LEGEND_ITEMS = [
   { symbol: SYMBOLS.present, label: '⭐ حضرت الحصه' },
   { symbol: SYMBOLS.warning, label: '⚠️ تحذير بالحذف' },
   { symbol: SYMBOLS.excused, label: '✋🏻 اعتذار عن الحلقه' },
-  { symbol: SYMBOLS.holiday, label: '➖ إجازة' },
 ];
 
 export function renderReportText(

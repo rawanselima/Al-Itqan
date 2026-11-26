@@ -225,11 +225,11 @@ export function buildReport({
         weekKeysOrder.push(satKey);
       }
 
-      const isHoliday = isHolidayDate(dateStr, circle._id, holidays);
+      // الإجازات تطبق على جلسات الحلقة فقط ولا تؤثر على أيام الواجب في التقرير
       rawWeeksMap.get(satKey)!.push({
         dateStr,
         dayOfWeek,
-        isHoliday,
+        isHoliday: false,
       });
     }
 
@@ -237,8 +237,7 @@ export function buildReport({
   }
 
   // 4. تصفية الأسابيع:
-  // "أي أسبوع مفيهوش ولا يوم واجب غير إجازة (زي أسبوع كله جمعة، أو كله إجازة) يتشال بالكامل ومياخدش رقم"
-  // "الترقيم بعد الشيل 1، 2، 3 من غير فجوات"
+  // كل أسبوع يحتوي على يوم واجب واحد على الأقل (السبت..الخميس) يدخل في الترقيم
   interface FilteredWeek {
     index: number;
     icon: string;
@@ -253,10 +252,7 @@ export function buildReport({
 
   for (const satKey of weekKeysOrder) {
     const days = rawWeeksMap.get(satKey) || [];
-    // هل هناك يوم واجب واحد على الأقل ليس إجازة؟
-    const hasNonHolidayHomeworkDay = days.some((d) => !d.isHoliday);
-
-    if (hasNonHolidayHomeworkDay) {
+    if (days.length > 0) {
       weekCounter++;
       activeWeeks.push({
         index: weekCounter,
@@ -384,14 +380,7 @@ export function buildReport({
           continue;
         }
 
-        if (day.isHoliday) {
-          // يوم إجازة رسمية
-          weekSymbols += SYMBOLS.holiday;
-          usedSymbols.add(SYMBOLS.holiday);
-          continue;
-        }
-
-        // يوم مطلوب فيه واجب في الأسبوع المنتهي
+        // يوم مطلوب فيه واجب في الأسبوع المنتهي (الإجازات لا تؤثر على الواجب ولا تظهر كرمز)
         evaluatedDaysCount++;
         const status = homeworkMap.get(`${st._id}_${day.dateStr}`);
 

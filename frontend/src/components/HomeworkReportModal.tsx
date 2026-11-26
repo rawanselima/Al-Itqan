@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { api, Circle } from "@/lib/api";
 import { CustomSelect } from "@/components/CustomSelect";
+import { Dialog, Button, LoadingState } from "@/components/ui";
+import { showToast } from "@/lib/toast";
 import {
   LuX,
   LuCopy,
@@ -66,7 +68,7 @@ export function HomeworkReportModal({
       setWarnings(data.warnings || []);
     } catch (err: any) {
       console.error("فشل جلب تقرير الواجب:", err);
-      alert(err.message || "فشل جلب تقرير الواجب");
+      showToast.error(err.message || "فشل جلب تقرير الواجب");
     } finally {
       setLoading(false);
     }
@@ -82,9 +84,10 @@ export function HomeworkReportModal({
     try {
       await navigator.clipboard.writeText(reportText);
       setCopied(true);
+      showToast.success("تم نسخ التقرير للواتساب ✓");
       setTimeout(() => setCopied(false), 2500);
     } catch {
-      alert("فشل نسخ التقرير إلى الحافظة");
+      showToast.error("فشل نسخ التقرير إلى الحافظة");
     }
   };
 
@@ -92,37 +95,21 @@ export function HomeworkReportModal({
     setReportText(originalText);
   };
 
-  if (!isOpen || !circle) return null;
+  if (!circle) return null;
+
+  const circleDisplayName = circle.teacherName?.trim() || circle.name;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
-      <div
-        className="bg-surface border border-surface-border rounded-3xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-        dir="rtl"
-      >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-border flex items-center justify-between bg-surface-hover/30 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-800">
-              <FaWhatsapp className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-lg text-text-main">
-                تقرير الواجب والحضور الشهري - حلقة {circle.name}
-              </h3>
-              <p className="text-xs text-text-muted">
-                رسالة نصية شهرية منسقة للواتساب تشمل ما تم تسجيله حتى الأسبوع الحالي
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-text-muted hover:text-text-main hover:bg-surface-hover rounded-xl transition-colors cursor-pointer"
-          >
-            <LuX className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`تقرير الواجب والحضور الشهري - ${circleDisplayName}`}
+      size="xl"
+      showCloseButton={true}
+      className="h-[88vh]"
+      bodyClassName="p-0 flex-1 min-h-0 flex flex-col overflow-hidden"
+    >
+      <div className="flex flex-col flex-1 min-h-0 h-full">
         {/* Filter Bar */}
         <div className="px-6 py-3 border-b border-surface-border bg-surface flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
@@ -139,7 +126,9 @@ export function HomeworkReportModal({
               type="number"
               value={year}
               onChange={(e) => setYear(parseInt(e.target.value, 10))}
-              className="w-24 px-3 py-2 rounded-xl border border-surface-border text-xs font-bold bg-surface text-text-main focus:outline-hidden focus:border-primary"
+              className="w-24 px-3.5 py-2.5 rounded-xl border border-surface-border bg-surface text-sm font-bold text-text-main focus:outline-none focus:ring-1 focus:border-primary focus:ring-primary/20"
+              min={2020}
+              max={2030}
             />
           </div>
         </div>
@@ -148,59 +137,49 @@ export function HomeworkReportModal({
         <div className="p-4 sm:p-6 flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Text Area */}
           {loading ? (
-            <div className="py-24 text-center text-text-muted my-auto">
-              <LuRefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
-              <p className="text-sm font-bold">جاري إعداد التقرير الشهري...</p>
-            </div>
+            <LoadingState text="جاري إعداد التقرير الشهري..." className="my-auto flex-1 py-24" />
           ) : (
-            <textarea
-              value={reportText}
-              onChange={(e) => setReportText(e.target.value)}
-              dir="rtl"
-              className="w-full h-80 sm:h-96 md:h-[420px] px-4 py-3 rounded-2xl border border-surface-border bg-surface-hover/30 text-text-main text-sm font-sans focus:outline-hidden focus:border-primary leading-relaxed resize-none selection:bg-emerald-100 selection:text-emerald-900 overflow-y-auto"
-            />
+            <div className="flex-1 min-h-0 flex flex-col">
+              <textarea
+                value={reportText}
+                onChange={(e) => setReportText(e.target.value)}
+                dir="rtl"
+                className="w-full h-full min-h-[300px] px-5 py-4 rounded-2xl border border-surface-border bg-surface-hover/30 text-text-main text-sm font-sans focus:outline-hidden focus:border-primary leading-relaxed resize-none selection:bg-emerald-100 selection:text-emerald-900 overflow-y-auto flex-1"
+              />
+            </div>
           )}
         </div>
 
         {/* Footer Actions */}
         <div className="px-6 py-4 border-t border-surface-border flex items-center justify-between bg-surface-hover/20 shrink-0">
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={handleReset}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-surface-border text-text-muted hover:text-text-main text-xs font-bold cursor-pointer"
+            iconLeft={<LuRefreshCw className="w-3.5 h-3.5" />}
           >
-            <LuRefreshCw className="w-3.5 h-3.5" />
-            <span>إعادة ضبط النص</span>
-          </button>
+            إعادة ضبط النص
+          </Button>
 
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-surface-border text-text-muted hover:text-text-main text-xs font-bold cursor-pointer"
             >
               إغلاق
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="success"
               onClick={handleCopy}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold shadow-md cursor-pointer"
+              iconLeft={copied ? <LuCheck className="w-4 h-4 text-emerald-200" /> : <LuCopy className="w-4 h-4" />}
             >
-              {copied ? (
-                <>
-                  <LuCheck className="w-4 h-4 text-emerald-200" />
-                  <span>تم النسخ بنجاح!</span>
-                </>
-              ) : (
-                <>
-                  <LuCopy className="w-4 h-4" />
-                  <span>نسخ التقرير للواتساب</span>
-                </>
-              )}
-            </button>
+              {copied ? "تم النسخ بنجاح!" : "نسخ التقرير للواتساب"}
+            </Button>
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

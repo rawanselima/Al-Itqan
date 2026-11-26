@@ -1,11 +1,14 @@
 import { Router, Request, Response } from 'express';
 import Settings from '../models/Settings';
+import { validate, asyncHandler } from '../middleware';
+import { settingsUpdateSchema } from '../schemas';
 
 const router = Router();
 
 // GET settings (returns single settings doc or creates default)
-router.get('/', async (_req: Request, res: Response) => {
-  try {
+router.get(
+  '/',
+  asyncHandler(async (_req: Request, res: Response) => {
     let settings = await Settings.findOne();
     if (!settings) {
       settings = await Settings.create({
@@ -13,14 +16,14 @@ router.get('/', async (_req: Request, res: Response) => {
       });
     }
     res.json(settings);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 // PUT update settings
-router.put('/', async (req: Request, res: Response) => {
-  try {
+router.put(
+  '/',
+  validate({ body: settingsUpdateSchema.shape.body }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { supervisorName, introText, outroText } = req.body;
     const updateObj: any = {};
 
@@ -35,9 +38,7 @@ router.put('/', async (req: Request, res: Response) => {
     });
 
     res.json(settings);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 export default router;

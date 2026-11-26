@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, Circle } from "@/lib/api";
+import { Spinner, LoadingState } from "@/components/ui";
 import {
   LuCalendar,
   LuBookOpen,
@@ -78,7 +79,7 @@ export default function DashboardPage() {
         <div className="bg-surface rounded-2xl p-5 sm:p-6 border border-surface-border shadow-xs flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs sm:text-sm font-medium text-text-muted">إجمالي الحلقات</span>
-            <p className="text-2xl sm:text-3xl font-bold text-text-main">{loading ? "..." : circles.length}</p>
+            <p className="text-2xl sm:text-3xl font-bold text-text-main">{loading ? <Spinner size="sm" /> : circles.length}</p>
           </div>
           <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-primary-light text-primary flex items-center justify-center">
             <LuBookOpen className="w-6 h-6" />
@@ -88,7 +89,7 @@ export default function DashboardPage() {
         <div className="bg-surface rounded-2xl p-5 sm:p-6 border border-surface-border shadow-xs flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs sm:text-sm font-medium text-text-muted">إجمالي الطالبات المسجلات</span>
-            <p className="text-2xl sm:text-3xl font-bold text-text-main">{loading ? "..." : studentsCount}</p>
+            <p className="text-2xl sm:text-3xl font-bold text-text-main">{loading ? <Spinner size="sm" /> : studentsCount}</p>
           </div>
           <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-primary-light text-primary flex items-center justify-center">
             <LuGraduationCap className="w-6 h-6" />
@@ -99,7 +100,7 @@ export default function DashboardPage() {
           <div className="space-y-1">
             <span className="text-xs sm:text-sm font-medium text-text-muted">حلقات اليوم ({currentDayName})</span>
             <p className="text-2xl sm:text-3xl font-bold text-primary">
-              {loading ? "..." : todaysCircles.length}
+              {loading ? <Spinner size="sm" /> : todaysCircles.length}
             </p>
           </div>
           <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-primary-light text-primary flex items-center justify-center">
@@ -188,7 +189,9 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {todaysCircles.length === 0 ? (
+        {loading ? (
+          <LoadingState text="جاري تحميل حلقات اليوم..." />
+        ) : todaysCircles.length === 0 ? (
           <div className="text-center py-8 text-text-muted bg-beige/60 rounded-2xl border border-dashed border-surface-border text-xs sm:text-sm">
             <p>لا توجد حلقات مجدولة لليوم ({currentDayName}). يمكنك تصفح باقي الحلقات من القائمة.</p>
           </div>

@@ -3,31 +3,33 @@ import AttendanceSession from '../models/AttendanceSession';
 import Student from '../models/Student';
 import Circle from '../models/Circle';
 import Holiday from '../models/Holiday';
+import { validate, asyncHandler } from '../middleware';
+import {
+  attendanceSaveSchema,
+  attendanceQuerySchema,
+} from '../schemas';
 
 const router = Router();
 
 // GET attendance session for a circle and date
-// If not yet created, returns a draft initialized with all active students of this circle
-
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get(
+  '/',
+  validate({ query: attendanceQuerySchema.shape.query }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { circleId, date } = req.query;
-    if (!circleId || !date) {
-      return res.status(400).json({ error: 'circleId و date حقول مطلوبة' });
-    }
 
     const circle = await Circle.findById(circleId);
     if (!circle) {
       return res.status(404).json({ error: 'الحلقة غير موجودة' });
     }
 
-    // Get all active students for this circle
-    const students = await Student.find({ circleId, isActive: true }).sort({ name: 1 });
+    // Get all active students for this circle (excluding soft-deleted)
+    const students = await Student.find({ circleId, isActive: true, deletedAt: null }).sort({ name: 1 });
 
     // Look for existing session
     const session = await AttendanceSession.findOne({ circleId, date: String(date) });
 
-    // فحص ما إذا كان هذا اليوم يقع ضمن أي إجازة رسمية مسجلة في الإعدادات
+    // Check if this date falls within any official holiday
     const matchingHoliday = await Holiday.findOne({
       $or: [{ circleId: null }, { circleId }],
       from: { $lte: String(date) },
@@ -42,10 +44,11 @@ router.get('/', async (req: Request, res: Response) => {
         studentId: st._id,
         studentName: st.name,
         phone: st.phone,
-        status: 'unrecorded',
+        status: 'unrecorded' as const,
         hasRecited: false,
         order: null,
         notes: '',
+        homeworkCompleted: false,
         departureTime: null,
       }));
 
@@ -77,6 +80,7 @@ router.get('/', async (req: Request, res: Response) => {
           hasRecited: rec.hasRecited,
           order: rec.order,
           notes: rec.notes || '',
+          homeworkCompleted: rec.homeworkCompleted || false,
           departureTime: rec.departureTime || null,
         };
       }
@@ -84,10 +88,11 @@ router.get('/', async (req: Request, res: Response) => {
         studentId: st._id,
         studentName: st.name,
         phone: st.phone,
-        status: 'unrecorded',
+        status: 'unrecorded' as const,
         hasRecited: false,
         order: null,
         notes: '',
+        homeworkCompleted: false,
         departureTime: null,
       };
     });
@@ -110,18 +115,15 @@ router.get('/', async (req: Request, res: Response) => {
       holidayReason,
       records: mergedRecords,
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 // POST save or update attendance session
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/',
+  validate({ body: attendanceSaveSchema.shape.body }),
+  asyncHandler(async (req: Request, res: Response) => {
     const { circleId, date, records, isHoliday } = req.body;
-    if (!circleId || !date || !Array.isArray(records)) {
-      return res.status(400).json({ error: 'circleId و date و records مطلوبة' });
-    }
 
     const cleanRecords = records.map((r: any) => ({
       studentId: r.studentId,
@@ -129,6 +131,7 @@ router.post('/', async (req: Request, res: Response) => {
       hasRecited: Boolean(r.hasRecited),
       order: r.order ?? null,
       notes: r.notes || '',
+      homeworkCompleted: Boolean(r.homeworkCompleted),
       departureTime: r.departureTime || null,
     }));
 
@@ -139,9 +142,7 @@ router.post('/', async (req: Request, res: Response) => {
     );
 
     res.json({ message: 'تم حفظ سجل الحضور بنجاح', session });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })
+);
 
 export default router;

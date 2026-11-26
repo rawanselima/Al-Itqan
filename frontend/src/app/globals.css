@@ -38,6 +38,38 @@ body {
   direction: rtl;
 }
 
+/* Custom Theme Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #b7cfc5 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(246, 245, 240, 0.7);
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #bfd4cb;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #184E3D;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Ensure all form controls and buttons strictly inherit Baloo Bhaijaan 2 */
 input,
 button,
@@ -83,4 +115,160 @@ textarea {
   .print-only {
     display: none !important;
   }
+}
+
+/* Toast Custom Styles */
+.toast-container-custom {
+  z-index: 99999;
+  font-family: var(--font-baloo), system-ui, sans-serif;
+}
+
+.toast-custom {
+  border-radius: 1rem !important;
+  padding: 1rem 1.25rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid var(--surface-border) !important;
+}
+
+.toast-custom--success {
+  background: linear-gradient(135deg, #EBF4EB 0%, #E8F0ED 100%) !important;
+  color: #184E3D !important;
+  border-color: #D2E3DC !important;
+}
+
+.toast-custom--error {
+  background: linear-gradient(135deg, #F9EEEB 0%, #FDEDE9 100%) !important;
+  color: #A66B61 !important;
+  border-color: #F2DEDB !important;
+}
+
+.toast-custom--info {
+  background: linear-gradient(135deg, #E8F0ED 0%, #EBF4EB 100%) !important;
+  color: #184E3D !important;
+  border-color: #D2E3DC !important;
+}
+
+.toast-custom--warning {
+  background: linear-gradient(135deg, #F5F0E1 0%, #FDF8E6 100%) !important;
+  color: #8A611C !important;
+  border-color: #E8DFC7 !important;
+}
+
+.toast-custom .toast-close-button {
+  color: inherit !important;
+  opacity: 0.6 !important;
+}
+
+.toast-custom .toast-close-button:hover {
+  opacity: 1 !important;
+}
+
+.toast-progress-bar {
+  background: var(--primary) !important;
+}
+
+/* Dialog & Dropdown Animations (Tailwind v4 native keyframes) */
+@keyframes dialogOverlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialogOverlayOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialogPanelIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes dialogPanelOut {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+}
+
+@keyframes dropdownInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dropdownInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dropdownOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.dialog-overlay-in {
+  animation: dialogOverlayIn 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dialog-overlay-out {
+  animation: dialogOverlayOut 180ms ease-in forwards;
+}
+
+.dialog-panel-in {
+  animation: dialogPanelIn 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dialog-panel-out {
+  animation: dialogPanelOut 180ms ease-in forwards;
+}
+
+.dropdown-in-down {
+  transform-origin: top center;
+  animation: dropdownInDown 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dropdown-in-up {
+  transform-origin: bottom center;
+  animation: dropdownInUp 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dropdown-out {
+  animation: dropdownOut 130ms ease-in forwards;
 }

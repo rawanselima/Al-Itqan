@@ -21,4 +21,8 @@ const CircleSchema = new Schema<ICircle>(
   { timestamps: true }
 );
 
+// Indexes for common queries
+CircleSchema.index({ name: 1 });
+CircleSchema.index({ createdAt: -1 });
+
 export default mongoose.model<ICircle>('Circle', CircleSchema);

@@ -11,6 +11,7 @@ import homeworkRoutes from './routes/homeworkRoutes';
 import reportRoutes from './routes/reportRoutes';
 import holidayRoutes from './routes/holidayRoutes';
 import settingsRoutes from './routes/settingsRoutes';
+import { errorHandler, notFoundHandler } from './middleware';
 
 // Load .env explicitly from backend folder and fallback to cwd
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -99,6 +100,12 @@ app.use('/api/homework', homeworkRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/settings', settingsRoutes);
+
+// 404 Handler (must be after all routes)
+app.use(notFoundHandler);
+
+// Global Error Handler (must be last)
+app.use(errorHandler);
 
 // Run app.listen locally only when NOT running inside Vercel Serverless
 if (!process.env.VERCEL) {

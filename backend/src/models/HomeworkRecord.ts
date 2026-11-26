@@ -29,8 +29,15 @@ const HomeworkRecordSchema = new Schema<IHomeworkRecord>(
   { timestamps: true }
 );
 
-// قيد فريد يمنع تكرار الواجب لنفس الطالبة في نفس التاريخ
-HomeworkRecordSchema.index({ studentId: 1, date: 1 }, { unique: true });
-HomeworkRecordSchema.index({ circleId: 1, date: 1 });
+// Compound unique index - one homework record per student per circle per date
+// This fixes the bug where a student in a different circle on the same date would conflict
+HomeworkRecordSchema.index(
+  { studentId: 1, circleId: 1, date: 1 },
+  { unique: true }
+);
+
+// Indexes for common queries
+HomeworkRecordSchema.index({ circleId: 1, date: 1 }); // For weekly/monthly reports
+HomeworkRecordSchema.index({ circleId: 1, studentId: 1, date: 1 }); // For student-specific queries
 
 export default mongoose.model<IHomeworkRecord>('HomeworkRecord', HomeworkRecordSchema);

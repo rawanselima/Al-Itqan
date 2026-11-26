@@ -6,6 +6,7 @@ export interface IAttendanceRecord {
   hasRecited: boolean;
   order?: number | null;
   notes?: string;
+  homeworkCompleted?: boolean;
   departureTime?: string | null;
 }
 
@@ -29,6 +30,7 @@ const AttendanceRecordSchema = new Schema<IAttendanceRecord>(
     hasRecited: { type: Boolean, default: false },
     order: { type: Number, default: null },
     notes: { type: String, default: '' },
+    homeworkCompleted: { type: Boolean, default: false },
     departureTime: { type: String, default: null },
   },
   { _id: false }
@@ -44,6 +46,11 @@ const AttendanceSessionSchema = new Schema<IAttendanceSession>(
   { timestamps: true }
 );
 
+// Unique compound index - one session per circle per date
 AttendanceSessionSchema.index({ circleId: 1, date: 1 }, { unique: true });
+
+// Additional indexes for reports
+AttendanceSessionSchema.index({ circleId: 1, isHoliday: 1, date: 1 });
+AttendanceSessionSchema.index({ date: 1 }); // For holiday checks across all circles
 
 export default mongoose.model<IAttendanceSession>('AttendanceSession', AttendanceSessionSchema);
